@@ -142,7 +142,7 @@ def pipeline(training_data, test_data):
     # Decision Tree
     dt = tree.DecisionTreeClassifier()
 
-    cross_val(training_x, training_y, clf, dt)
+    cross_val(training_x, training_y.values.ravel(), clf, dt)
 
     # Model fitten
     clf.fit(training_x, training_y.values.ravel())

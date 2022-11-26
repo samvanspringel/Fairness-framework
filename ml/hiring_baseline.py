@@ -42,7 +42,7 @@ def pipeline(training_data, test_data):
     lin_reg = linear_model.LinearRegression()
 
     # Cross-validation score berekenen
-    score_lin_reg = cross_val_score(lin_reg, training_x, training_y, cv=k_partitioning, scoring='neg_root_mean_squared_error')
+    score_lin_reg = cross_val_score(lin_reg, training_x, training_y.values.ravel(), cv=k_partitioning, scoring='neg_root_mean_squared_error')
     model_mean_scores["Least Ordinary Squares:"] = repr(np.mean(score_lin_reg))
 
     print("\n ------- Score lineaire regressie ---------")
@@ -72,7 +72,7 @@ def pipeline(training_data, test_data):
     dt = tree.DecisionTreeRegressor()
 
     # Cross-validation score berekenen
-    score_dt = cross_val_score(dt, training_x, training_y, cv=k_partitioning,
+    score_dt = cross_val_score(dt, training_x, training_y.values.ravel(), cv=k_partitioning,
                                     scoring='neg_root_mean_squared_error')
     model_mean_scores["Decision Tree:"] = repr(np.mean(score_dt))
 
