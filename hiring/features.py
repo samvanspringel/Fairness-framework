@@ -33,14 +33,14 @@ class Nationality(Enum):
     Poland = auto()
     Spain = auto()
     Morocco = auto()
-    USSR = auto()
+    Russia = auto()
     Turkey = auto()
     Italy = auto()
 
 
 PROB_BEL = 0.87
 
-PROB_USS = 0.01
+PROB_RUS = 0.01
 PROB_ROM = 0.01
 PROB_FRA = 0.02
 PROB_NET = 0.02
@@ -221,7 +221,7 @@ class MigrationBackgroundDescription(FeatureDescription):
 class NationalityDescription(FeatureDescription):
     """Nationality"""
     def __init__(self, prob_bel=PROB_BEL, prob_fra=PROB_FRA, prob_net=PROB_NET, prob_tur=PROB_TUR, prob_rom=PROB_ROM,
-                 prob_spa=PROB_SPA, prob_ita=PROB_ITA, prob_yug=PROB_YUG, prob_uss=PROB_USS, prob_pol=PROB_POL,
+                 prob_spa=PROB_SPA, prob_ita=PROB_ITA, prob_yug=PROB_YUG, prob_rus=PROB_RUS, prob_pol=PROB_POL,
                  prob_mor=PROB_MOR):
         # Super call
         super(NationalityDescription, self).__init__(feature=HiringFeature.nationality)
@@ -234,15 +234,15 @@ class NationalityDescription(FeatureDescription):
         self.prob_spa = prob_spa
         self.prob_ita = prob_ita
         self.prob_yug = prob_yug
-        self.prob_uss = prob_uss
+        self.prob_rus = prob_rus
         self.prob_pol = prob_pol
         self.prob_mor = prob_mor
 
     def generate(self, rng: Generator, *args):
         """Generate a nationality"""
         nationality = rng.choice([Nationality.Belgium, Nationality.Italy, Nationality.Netherlands, Nationality.Spain,
-                             Nationality.Spain, Nationality.Romania, Nationality.Morocco, Nationality.USSR,
+                             Nationality.Spain, Nationality.Romania, Nationality.Morocco, Nationality.Russia,
                              Nationality.Poland, Nationality.Yugoslavia, Nationality.France],
                             p=[self.prob_bel, self.prob_fra, self.prob_net, self.prob_tur, self.prob_rom, self.prob_spa,
-                               self.prob_ita, self.prob_yug, self.prob_uss, self.prob_pol, self.prob_mor])
+                               self.prob_ita, self.prob_yug, self.prob_rus, self.prob_pol, self.prob_mor])
         return nationality
