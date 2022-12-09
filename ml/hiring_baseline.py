@@ -7,11 +7,10 @@ import numpy as np
 import sklearn
 import pandas as pd
 from sklearn.model_selection import cross_val_score, KFold, train_test_split
+from sklearn.metrics import confusion_matrix
 import pprint
 
-# Modellen
-from sklearn import svm
-from sklearn import tree
+
 
 from hiring.hire import HiringScenario
 import pandas as pd
@@ -201,8 +200,34 @@ def apply_fairness_notion(sensitive_feature, priv_feature_value, test_data, mode
                                                                             sensitive_feature] == priv_feature_value,
                                                              pos_label=1))
 
+def generate_cm(test_data, trained_models):
+    test_data = rename_goodness(test_data)
+    cm = []
+
+    test_data_men = test_data.loc[test_data['gender'] == 1]
+    test_data_women = test_data.loc[test_data['gender'] == 2]
+
+    men_true = isolate_prediction(test_data_men)
+    women_true = isolate_prediction(test_data_women)
+
+    women_x = isolate_features(test_data_women)
+    men_x = isolate_features(test_data_men)
+
+    cm_women_humans = confusion_matrix(women_true, women_true)
+    cm_men_humans = confusion_matrix(men_true, men_true)
+    cm.append(cm_women_humans)
+    cm.append(cm_men_humans)
+
+    for tm in trained_models:
+        prediction_women = tm.predict(women_x)
+        cm.append(confusion_matrix(women_true, prediction_women))
+        prediction_men = tm.predict(men_x)
+        cm.append(confusion_matrix(men_true, prediction_men))
+
+    return cm
 
 def train_models(training_data, models):
+    training_data = rename_goodness(training_data)
     training_x = isolate_features(training_data)
     training_y = isolate_prediction(training_data)
     trained_models = []
@@ -213,19 +238,18 @@ def train_models(training_data, models):
     return trained_models
 
 
-def pipeline(training_data, test_data):
-    training_data = rename_goodness(training_data)
-    # Gebruikte modellen
-    models = [svm.SVC(), tree.DecisionTreeClassifier()]
+def pipeline(training_data, models):
+
 
     cross_val(training_data, models)
 
     trained_models = train_models(training_data, models)
+    return trained_models
 
     # gender_confusion_matrices(test_data)
 
-    test_data = rename_goodness(test_data)
-    apply_fairness_notion('gender', 1, test_data, trained_models)
+    # test_data = rename_goodness(test_data)
+    # apply_fairness_notion('gender', 1, test_data, trained_models)
 
 
 def generate_training_data(env, num_samples):
@@ -234,11 +258,12 @@ def generate_training_data(env, num_samples):
 def generate_test_data(env, num_samples):
     return env.create_dataset(num_samples, show_goodness=True, rounding=5)
 
+def make_preview(data):
+    data = data.drop(['goodness'], axis=1).sample(20)
+    return data
+
 def setup_environment():
     seed = 1
     random.seed(seed)
     np.random.seed(seed)
     return HiringScenario(seed=seed)
-
-def start_pipeline(training_data, test_data):
-    pipeline(training_data, test_data)
