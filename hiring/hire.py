@@ -24,12 +24,11 @@ class HiringScenario(Scenario):
         self.experience_desc = ExperienceDescription()
 
         # Uitbreiding
-        self.migration_background_desc = MigrationBackgroundDescription()
-        self.nationality_desc = NationalityDescription()
+        self.origin_desc = OriginDescription()
 
         self.features = [HiringFeature.gender, HiringFeature.age, HiringFeature.degree,
-                         HiringFeature.extra_degree, HiringFeature.experience, HiringFeature.migration_background,
-                         HiringFeature.nationality]
+                         HiringFeature.extra_degree, HiringFeature.experience,
+                         HiringFeature.origin]
         self.feature_biases = []
         self.reward_biases = []
         self.goodness_noise = GOODNESS_NOISE
@@ -71,8 +70,7 @@ class HiringScenario(Scenario):
         extra_degree, extra_degree_feature = self.extra_degree_desc.generate_and_feature(self.rng, gender, degree)
         experience, experience_feature = self.experience_desc.generate_and_feature(self.rng, gender, age)
 
-        migration_background, migration_background_feature = self.migration_background_desc.generate_and_feature(self.rng, gender, age)
-        nationality, nationality_feature = self.nationality_desc.generate_and_feature(self.rng)
+        origin, origin_feature = self.origin_desc.generate_and_feature(self.rng)
 
 
         # Create a sample
@@ -82,14 +80,13 @@ class HiringScenario(Scenario):
             degree_feature: degree,
             extra_degree_feature: extra_degree,
             experience_feature: experience,
-            migration_background_feature: migration_background,
-            nationality_feature: nationality
+            origin_feature: origin
         }
         state = State(sample)
         return state
 
     def calc_goodness(self, candidate_state: State):
-        gender, age, degree, extra_degree, experience, migration_background, nationality = candidate_state.get_features(self.features)
+        gender, age, degree, extra_degree, experience, origin = candidate_state.get_features(self.features)
 
         # younger individuals better? Could be hired at a lower salary + can work for longer after hiring
         # => maximum age would be worst as they will retire sooner
@@ -221,7 +218,7 @@ class HiringScenarioMDP(HiringScenario):
         self.history = HiringHistory([HiringActions.reject, HiringActions.hire],
                                      [HiringFeature.gender, HiringFeature.age, HiringFeature.degree,
                                       HiringFeature.extra_degree, HiringFeature.experience,
-                                      HiringFeature.migration_background, HiringFeature.nationality], n_bins=self.n_bins)
+                                      HiringFeature.origin], n_bins=self.n_bins)
 
     def generate_sample(self):
         # Get MDP state
@@ -231,6 +228,6 @@ class HiringScenarioMDP(HiringScenario):
 
     def get_individual(self, state: State):
         features = [HiringFeature.gender, HiringFeature.age, HiringFeature.degree, HiringFeature.extra_degree,
-                    HiringFeature.experience, HiringFeature.migration_background, HiringFeature.nationality]
+                    HiringFeature.experience, HiringFeature.origin]
         individual = {feature: state[feature] for feature in features}
         return individual

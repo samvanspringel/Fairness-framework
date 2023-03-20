@@ -3,18 +3,18 @@ import random
 import aif360.sklearn.metrics
 import numpy as np
 import pandas
-# import torch
 
 from sklearn.model_selection import cross_val_score, KFold
 from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
+from aif360.datasets import StandardDataset
+from aif360.metrics import ClassificationMetric
 
 from hiring import FeatureBias
 from hiring.features import HiringFeature, Gender, GenderDescription
 
 from hiring.hire import HiringScenario
 import pandas as pd
-
-import aif360 as aif
 
 
 def convert_goodness(g):
@@ -68,38 +68,52 @@ def divide_data_on_feature(data):
     return [data[data['gender'] == 1], data[data['gender'] == 2]]
 
 
-def apply_fairness_notion(sensitive_feature, priv_feature_value, test_data, models):
-    # split_data = divide_data_on_feature(test_data)
-    # data_men = split_data[0]
-    # data_women = split_data[1]
+def change_types(data):
+    return data.astype(str).astype(float).astype(int)
 
-    print("Difference in acceptance rate by human")
-    print(aif360.sklearn.metrics.statistical_parity_difference(y_true=test_data, y_pred=test_data,
-                                                               priv_group=test_data[
-                                                                              sensitive_feature] == priv_feature_value,
-                                                               pos_label=1))
 
-    for m in models:
-        print("Difference in acceptance rate by " + str(m))
-        test_features = isolate_features(test_data)
-        prediction = m.predict(test_features)
-        model_prediction = add_prediction_to_df(test_features, prediction, 'hired')
-        print(aif360.sklearn.metrics.statistical_parity_difference(y_true=test_data, y_pred=model_prediction,
-                                                                   priv_group=test_data[
-                                                                                  sensitive_feature] == priv_feature_value,
-                                                                   pos_label=1))
+def calculate_fairness(predictions, sensitive_attributes, output):
+    dataset_gt = change_types(predictions[0])
+
+    dataset = StandardDataset(df=dataset_gt,
+                              label_name=output,
+                              favorable_classes=[1],
+                              protected_attribute_names=sensitive_attributes,
+                              privileged_classes=[[1]])
+    fairness_metrics = []
+
+    for p in predictions:
+        prediction = p[['hired']]
+        dataset_model = dataset.copy()
+        dataset_model.labels = prediction.values
+        a = sensitive_attributes[0]
+        i = dataset_model.protected_attribute_names.index(a)
+        privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]}]
+        unprivileged_groups = [{a: dataset_model.unprivileged_protected_attributes[i]}]
+
+        classification_metric = ClassificationMetric(dataset, dataset_model, unprivileged_groups=unprivileged_groups,
+                                                     privileged_groups=privileged_groups)
+
+        model_fairness_metrics = [abs(classification_metric.statistical_parity_difference()),
+                                  abs(classification_metric.false_positive_rate_difference()),
+                                  abs(classification_metric.equal_opportunity_difference()),
+                                  abs(classification_metric.accuracy())]
+
+        fairness_metrics.append(model_fairness_metrics)
+
+    return fairness_metrics
 
 
 def generate_cm(predictions):
     cm = []
 
-    df_human_prediction = predictions[0]
+    df_dataset_prediction = predictions[0]
 
-    human_prediction_men = df_human_prediction.loc[df_human_prediction['gender'] == 1]
-    human_prediction_women = df_human_prediction.loc[df_human_prediction['gender'] == 2]
+    dataset_prediction_men = df_dataset_prediction.loc[df_dataset_prediction['gender'] == 1]
+    dataset_prediction_women = df_dataset_prediction.loc[df_dataset_prediction['gender'] == 2]
 
-    men_true = isolate_prediction(human_prediction_men)
-    women_true = isolate_prediction(human_prediction_women)
+    men_true = isolate_prediction(dataset_prediction_men)
+    women_true = isolate_prediction(dataset_prediction_women)
 
     for df_p in predictions:
         df_model_prediction_women = df_p.loc[df_p['gender'] == 2]
@@ -111,24 +125,26 @@ def generate_cm(predictions):
         cm.append(confusion_matrix(y_true=women_true, y_pred=model_prediction_women))
         cm.append(confusion_matrix(y_true=men_true, y_pred=model_prediction_men))
 
+    # TODO: Alle aantallen delen door totaal aantal van groep
     return cm
 
 
-def make_count_df(counts):
-    df = pandas.DataFrame(counts, ["Women", "Men"], columns=['hired'])
+def make_percentage_df(percentages):
+    percentages_rounded = list(map(lambda percentage: round(percentage, 2), percentages))
+    df = pandas.DataFrame(percentages_rounded, ["Women", "Men"], columns=['hired'])
     return df
 
 
 def count_hired(predictions):
-    hired_counts = []
+    hired_percentages = []
 
     for df_p in predictions:
-        counts = [len(df_p[(df_p['gender'] == 2) & (df_p['hired'] == 1)]),
-                  len(df_p[(df_p['gender'] == 1) & (df_p['hired'] == 1)])]
-        dataframe_hired_model_count = make_count_df(counts)
-        hired_counts.append(dataframe_hired_model_count)
+        percentages = [len(df_p[(df_p['gender'] == 2) & (df_p['hired'] == 1)]) / len(df_p[df_p['gender'] == 2]),
+                       len(df_p[(df_p['gender'] == 1) & (df_p['hired'] == 1)]) / len(df_p[df_p['gender'] == 1])]
+        dataframe_hired_model_count = make_percentage_df(percentages)
+        hired_percentages.append(dataframe_hired_model_count)
 
-    return hired_counts
+    return hired_percentages
 
 
 def make_predictions(test_data, trained_models):
@@ -137,6 +153,7 @@ def make_predictions(test_data, trained_models):
     for tm in trained_models:
         test_x = isolate_features(test_data)
         prediction = tm.predict(test_x)
+        # print(accuracy_score(test_x, prediction))
         dataframe_model = add_prediction_to_df(test_x, prediction, 'hired')
         predictions.append(dataframe_model)
 

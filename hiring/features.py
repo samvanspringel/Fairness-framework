@@ -14,8 +14,7 @@ class HiringFeature(Feature):
     experience = auto()
     age = auto()
     gender = auto()
-    nationality = auto()
-    migration_background = auto()
+    origin = auto()
 
 
 class Gender(Enum):
@@ -23,48 +22,43 @@ class Gender(Enum):
     male = auto()
     female = auto()
 
-class Nationality(Enum):
+class Origin(Enum):
     """Enumeration for the origine"""
-    Belgium = auto()
-    France = auto()
-    Romania = auto()
-    Yugoslavia = auto()
-    Netherlands = auto()
-    Poland = auto()
-    Spain = auto()
-    Morocco = auto()
-    Russia = auto()
-    Turkey = auto()
-    Italy = auto()
+    belgium = auto()
+    foreign_background = auto()
+    foreign = auto()
 
+# TODO: Data van 2013 zoeken
+PROB_BELGIUM = 0.666
+PROB_FOREIGN_BACKGROUND = 0.206
+PROB_FOREIGN = 0.128
 
-PROB_BEL = 0.87
-
-PROB_RUS = 0.01
-PROB_ROM = 0.01
-PROB_FRA = 0.02
-PROB_NET = 0.02
-PROB_POL = 0.01
-PROB_SPA = 0.007
-PROB_MOR = 0.02
-PROB_YUG = 0.007
-PROB_TUR = 0.016
-PROB_ITA = 0.01
-
-P_MIGRATION_BACKGROUND = 0.33
-
+#https://bestat.statbel.fgov.be/bestat/crosstable.xhtml?view=8b82b79e-4696-45ec-a082-254756db6be6
+# 2013 referentie jaar
 # Some default values which can be used for a baseline scenario
-PROB_MALE = 0.5
-PROB_FEMALE = 0.5
+PROB_MALE = 0.5024
+PROB_FEMALE = 0.4976
 
 AGE_MALE = range(18, 66)
 AGE_FEMALE = range(18, 66)
 
-P_DEGREE_MALE = 0.4
-P_DEGREE_FEMALE = 0.4
+# MANNEN
+# Onderwijsniveau laag: 1158164
+# Onderwijsniveau midden: 1439308
+# Onderwijsniveau hoog: 1048457
+# TOTAAL: 3645929
+P_DEGREE_MALE = 0.3948 + 0.2876
+P_E_DEGREE_MALE = 1048457 / 1048457 + 1439308
 
-P_E_DEGREE_MALE = 0.4
-P_E_DEGREE_FEMALE = 0.4
+
+# VROUWEN
+# Onderwijsniveau laag: 1047297
+# Onderwijsniveau midden: 1324730
+# Onderwijsniveau hoog: 1239118
+# TOTAAL: 3611145
+P_DEGREE_FEMALE = 0.3668
+P_E_DEGREE_FEMALE = 0.3431
+
 
 P_E_DEGREE_MALE = 0.2
 P_E_DEGREE_FEMALE = 0.6
@@ -200,49 +194,19 @@ class ExperienceDescription(FeatureDescription):
         return experience
 
 
-class MigrationBackgroundDescription(FeatureDescription):
-    """Migration background: Either has a different origine or not.
 
-    Attributes:
-        prob_yes: (Optional) The probability of a person having a different origine.
-    """
-    def __init__(self, prob_mb=P_MIGRATION_BACKGROUND):
-        # Super call
-        super(MigrationBackgroundDescription, self).__init__(feature=HiringFeature.migration_background)
-        #
-        self.probabilities = {Gender.male: prob_mb, Gender.female: prob_mb, }
-
-    def generate(self, rng: Generator, gender: Gender = None, default_background: int = None):
-        """Generate a background"""
-        background = rng.binomial(1, self.probabilities[gender])
-        return background
-
-
-class NationalityDescription(FeatureDescription):
+class OriginDescription(FeatureDescription):
     """Nationality"""
-    def __init__(self, prob_bel=PROB_BEL, prob_fra=PROB_FRA, prob_net=PROB_NET, prob_tur=PROB_TUR, prob_rom=PROB_ROM,
-                 prob_spa=PROB_SPA, prob_ita=PROB_ITA, prob_yug=PROB_YUG, prob_rus=PROB_RUS, prob_pol=PROB_POL,
-                 prob_mor=PROB_MOR):
+    def __init__(self, prob_bel=PROB_BELGIUM, prob_fb=PROB_FOREIGN_BACKGROUND, prob_foreign=PROB_FOREIGN):
         # Super call
-        super(NationalityDescription, self).__init__(feature=HiringFeature.nationality)
+        super(OriginDescription, self).__init__(feature=HiringFeature.origin)
         #
         self.prob_bel = prob_bel
-        self.prob_fra = prob_fra
-        self.prob_net = prob_net
-        self.prob_tur = prob_tur
-        self.prob_rom = prob_rom
-        self.prob_spa = prob_spa
-        self.prob_ita = prob_ita
-        self.prob_yug = prob_yug
-        self.prob_rus = prob_rus
-        self.prob_pol = prob_pol
-        self.prob_mor = prob_mor
+        self.prob_fb = prob_fb
+        self.prob_foreign = prob_foreign
 
     def generate(self, rng: Generator, *args):
         """Generate a nationality"""
-        nationality = rng.choice([Nationality.Belgium, Nationality.Italy, Nationality.Netherlands, Nationality.Spain,
-                             Nationality.Spain, Nationality.Romania, Nationality.Morocco, Nationality.Russia,
-                             Nationality.Poland, Nationality.Yugoslavia, Nationality.France],
-                            p=[self.prob_bel, self.prob_fra, self.prob_net, self.prob_tur, self.prob_rom, self.prob_spa,
-                               self.prob_ita, self.prob_yug, self.prob_rus, self.prob_pol, self.prob_mor])
+        nationality = rng.choice([Origin.belgium, Origin.foreign_background, Origin.foreign],
+                            p=[self.prob_bel, self.prob_foreign, self.prob_fb])
         return nationality
