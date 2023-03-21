@@ -11,7 +11,7 @@ from aif360.datasets import StandardDataset
 from aif360.metrics import ClassificationMetric
 
 from hiring import FeatureBias
-from hiring.features import HiringFeature, Gender, GenderDescription
+from hiring.features import HiringFeature, Gender, GenderDescription, Origin, OriginDescription
 
 from hiring.hire import HiringScenario
 import pandas as pd
@@ -42,16 +42,16 @@ def cross_val(training_data, models):
 
 def rename_goodness(data):
     data['goodness'] = data['goodness'].map(convert_goodness)
-    data.rename({'goodness': 'hired'}, axis=1, inplace=True)
+    data.rename({'goodness': 'qualified'}, axis=1, inplace=True)
     return data
 
 
 def isolate_features(data):
-    return data.drop(['hired'], axis=1)
+    return data.drop(['qualified'], axis=1)
 
 
 def isolate_prediction(data):
-    return data[['hired']]
+    return data[['qualified']]
 
 
 def print_info(data, string):
@@ -75,31 +75,36 @@ def change_types(data):
 def calculate_fairness(predictions, sensitive_attributes, output):
     dataset_gt = change_types(predictions[0])
 
-    dataset = StandardDataset(df=dataset_gt,
-                              label_name=output,
-                              favorable_classes=[1],
-                              protected_attribute_names=sensitive_attributes,
-                              privileged_classes=[[1]])
     fairness_metrics = []
 
-    for p in predictions:
-        prediction = p[['hired']]
-        dataset_model = dataset.copy()
-        dataset_model.labels = prediction.values
-        a = sensitive_attributes[0]
-        i = dataset_model.protected_attribute_names.index(a)
-        privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]}]
-        unprivileged_groups = [{a: dataset_model.unprivileged_protected_attributes[i]}]
+    if len(sensitive_attributes) != 0:
+        dataset = StandardDataset(df=dataset_gt,
+                                  label_name=output,
+                                  favorable_classes=[1],
+                                  protected_attribute_names=sensitive_attributes,
+                                  privileged_classes=[[1]])
 
-        classification_metric = ClassificationMetric(dataset, dataset_model, unprivileged_groups=unprivileged_groups,
-                                                     privileged_groups=privileged_groups)
+        for p in predictions:
+            prediction = p[['qualified']]
+            dataset_model = dataset.copy()
+            dataset_model.labels = prediction.values
+            a = sensitive_attributes[0]
+            i = dataset_model.protected_attribute_names.index(a)
+            privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]}]
+            unprivileged_groups = [{a: dataset_model.unprivileged_protected_attributes[i]}]
 
-        model_fairness_metrics = [abs(classification_metric.statistical_parity_difference()),
-                                  abs(classification_metric.false_positive_rate_difference()),
-                                  abs(classification_metric.equal_opportunity_difference()),
-                                  abs(classification_metric.accuracy())]
+            classification_metric = ClassificationMetric(dataset, dataset_model,
+                                                         unprivileged_groups=unprivileged_groups,
+                                                         privileged_groups=privileged_groups)
 
-        fairness_metrics.append(model_fairness_metrics)
+            model_fairness_metrics = [abs(classification_metric.statistical_parity_difference()),
+                                      abs(classification_metric.false_positive_rate_difference()),
+                                      abs(classification_metric.equal_opportunity_difference()),
+                                      abs(classification_metric.accuracy())]
+
+            fairness_metrics.append(model_fairness_metrics)
+    else:
+        fairness_metrics = [0, 0, 0, 0]
 
     return fairness_metrics
 
@@ -131,7 +136,7 @@ def generate_cm(predictions):
 
 def make_percentage_df(percentages):
     percentages_rounded = list(map(lambda percentage: round(percentage, 2), percentages))
-    df = pandas.DataFrame(percentages_rounded, ["Women", "Men"], columns=['hired'])
+    df = pandas.DataFrame(percentages_rounded, ["Women", "Men"], columns=['qualified'])
     return df
 
 
@@ -139,8 +144,8 @@ def count_hired(predictions):
     hired_percentages = []
 
     for df_p in predictions:
-        percentages = [len(df_p[(df_p['gender'] == 2) & (df_p['hired'] == 1)]) / len(df_p[df_p['gender'] == 2]),
-                       len(df_p[(df_p['gender'] == 1) & (df_p['hired'] == 1)]) / len(df_p[df_p['gender'] == 1])]
+        percentages = [len(df_p[(df_p['gender'] == 2) & (df_p['qualified'] == 1)]) / len(df_p[df_p['gender'] == 2]),
+                       len(df_p[(df_p['gender'] == 1) & (df_p['qualified'] == 1)]) / len(df_p[df_p['gender'] == 1])]
         dataframe_hired_model_count = make_percentage_df(percentages)
         hired_percentages.append(dataframe_hired_model_count)
 
@@ -154,7 +159,7 @@ def make_predictions(test_data, trained_models):
         test_x = isolate_features(test_data)
         prediction = tm.predict(test_x)
         # print(accuracy_score(test_x, prediction))
-        dataframe_model = add_prediction_to_df(test_x, prediction, 'hired')
+        dataframe_model = add_prediction_to_df(test_x, prediction, 'qualified')
         predictions.append(dataframe_model)
 
     return predictions
@@ -197,7 +202,7 @@ def make_preview(data):
     return data
 
 
-def setup_environment(scenario):
+def setup_environment(scenario, sensitive_features):
     seed = 1
     random.seed(seed)
     np.random.seed(seed)
@@ -206,7 +211,7 @@ def setup_environment(scenario):
     elif scenario == 'Different distribution':
         return setup_diff_distribution_environment()
     elif scenario == 'Bias':
-        return setup_bias_environment()
+        return setup_bias_environment(sensitive_features)
 
 
 def setup_diff_distribution_environment():
@@ -221,13 +226,18 @@ def setup_diff_distribution_environment():
     return diff_distribution_environment
 
 
-def setup_bias_environment():
+def setup_bias_environment(sensitive_features):
     seed = 1
     random.seed(seed)
     np.random.seed(seed)
     bias_environment = HiringScenario(seed=seed)
 
     bias_environment.description = "Men are more desirable than women"
-    bias_environment.feature_biases = [FeatureBias(HiringFeature.gender, Gender.male, 2.0)]
+    if "Gender" in sensitive_features:
+        print("gender bias added")
+        bias_environment.feature_biases = [FeatureBias(HiringFeature.gender, Gender.male, 2.0)]
+    if "Origin" in sensitive_features:
+        print("origin bias added")
+        bias_environment.feature_biases.append(FeatureBias(HiringFeature.origin, Origin.belgium, 2.0))
 
     return bias_environment

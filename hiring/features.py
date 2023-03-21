@@ -33,7 +33,7 @@ PROB_BELGIUM = 0.666
 PROB_FOREIGN_BACKGROUND = 0.206
 PROB_FOREIGN = 0.128
 
-#https://bestat.statbel.fgov.be/bestat/crosstable.xhtml?view=8b82b79e-4696-45ec-a082-254756db6be6
+# https://bestat.statbel.fgov.be/bestat/crosstable.xhtml?view=8b82b79e-4696-45ec-a082-254756db6be6
 # 2013 referentie jaar
 # Some default values which can be used for a baseline scenario
 PROB_MALE = 0.5024
@@ -47,8 +47,8 @@ AGE_FEMALE = range(18, 66)
 # Onderwijsniveau midden: 1439308
 # Onderwijsniveau hoog: 1048457
 # TOTAAL: 3645929
-P_DEGREE_MALE = 0.3948 + 0.2876
-P_E_DEGREE_MALE = 1048457 / 1048457 + 1439308
+P_DEGREE_MALE = 0.6824
+P_E_DEGREE_MALE = 0.42144535356
 
 
 # VROUWEN
@@ -56,12 +56,12 @@ P_E_DEGREE_MALE = 1048457 / 1048457 + 1439308
 # Onderwijsniveau midden: 1324730
 # Onderwijsniveau hoog: 1239118
 # TOTAAL: 3611145
-P_DEGREE_FEMALE = 0.3668
-P_E_DEGREE_FEMALE = 0.3431
+P_DEGREE_FEMALE = 0.7099
+P_E_DEGREE_FEMALE = 0.48330400242
 
 
-P_E_DEGREE_MALE = 0.2
-P_E_DEGREE_FEMALE = 0.6
+# P_E_DEGREE_MALE = 0.2
+# P_E_DEGREE_FEMALE = 0.6
 
 
 EXPERIENCE_MALE = range(0, 10)
@@ -208,5 +208,5 @@ class OriginDescription(FeatureDescription):
     def generate(self, rng: Generator, *args):
         """Generate a nationality"""
         nationality = rng.choice([Origin.belgium, Origin.foreign_background, Origin.foreign],
-                            p=[self.prob_bel, self.prob_foreign, self.prob_fb])
+                            p=[self.prob_bel, self.prob_fb, self.prob_foreign])
         return nationality
