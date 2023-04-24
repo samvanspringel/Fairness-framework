@@ -1,7 +1,7 @@
 from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output
 from Tabs import horizontal_div
-from Load_scenario import load_scenario
+from Process_data import load_scenario
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -27,7 +27,7 @@ def dd_get_tab_dcc():
 
     dropdown_models = dcc.Dropdown(id=DROPDOWN_MODELS_DD, options=models_options, value=models_options[1],
                                    clearable=False)
-    checklist_sensitive_features = dcc.Checklist(id=CHECKLIST_SENSITIVE_FEATURE_DD, options=sf_options, value=sf_options[0])
+    checklist_sensitive_features = dcc.Checklist(id=CHECKLIST_SENSITIVE_FEATURE_DD, options=sf_options, value=[sf_options[0]])
     sunburst_plot = dcc.Graph(id=GRAPH_SUNBURST_DD)
     hired_graph = dcc.Graph(id=GRAPH_AMOUNT_HIRED_DD)
     cm_women = dcc.Graph(id=CM_GRAPH_WOMEN_DD)

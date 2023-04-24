@@ -4,11 +4,13 @@ from dash import dcc, html
 TABS_HEADER_ID = "tabs_header"
 TABS_DIV_ID = "tabs_div"
 # Tab IDs
+TAB_HOME = "tab_home"
 TAB_BASELINE = "tab_baseline"
 TAB_DD = "tab_dd"
 TAB_BIAS = "tab_bias"
 
 all_tabs = {
+    TAB_HOME: "Home",
     TAB_BASELINE: "Baseline",
     TAB_DD: "Different distribution",
     TAB_BIAS: "Bias"

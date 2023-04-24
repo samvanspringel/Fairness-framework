@@ -1,7 +1,7 @@
 from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output
 from Tabs import horizontal_div
-from Load_scenario import load_scenario
+from Process_data import load_scenario
 import plotly.express as px
 import plotly.graph_objects as go
 

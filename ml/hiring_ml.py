@@ -72,41 +72,35 @@ def change_types(data):
     return data.astype(str).astype(float).astype(int)
 
 
-def calculate_fairness(predictions, sensitive_attributes, output):
-    dataset_gt = change_types(predictions[0])
+def calculate_fairness(prediction, sensitive_attributes, output):
+    dataset_gt = change_types(prediction)
 
-    fairness_metrics = []
+    dataset = StandardDataset(df=dataset_gt,
+                              label_name=output,
+                              favorable_classes=[1],
+                              protected_attribute_names=sensitive_attributes,
+                              privileged_classes=[[1]])
 
-    if len(sensitive_attributes) != 0:
-        dataset = StandardDataset(df=dataset_gt,
-                                  label_name=output,
-                                  favorable_classes=[1],
-                                  protected_attribute_names=sensitive_attributes,
-                                  privileged_classes=[[1]])
+    prediction = prediction[['qualified']]
+    dataset_model = dataset.copy()
+    dataset_model.labels = prediction.values
+    a = sensitive_attributes[0]
+    i = dataset_model.protected_attribute_names.index(a)
+    privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]}]
+    unprivileged_groups = [{a: dataset_model.unprivileged_protected_attributes[i]}]
 
-        for p in predictions:
-            prediction = p[['qualified']]
-            dataset_model = dataset.copy()
-            dataset_model.labels = prediction.values
-            a = sensitive_attributes[0]
-            i = dataset_model.protected_attribute_names.index(a)
-            privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]}]
-            unprivileged_groups = [{a: dataset_model.unprivileged_protected_attributes[i]}]
+    classification_metric = ClassificationMetric(dataset, dataset_model,
+                                                 unprivileged_groups=unprivileged_groups,
+                                                 privileged_groups=privileged_groups)
 
-            classification_metric = ClassificationMetric(dataset, dataset_model,
-                                                         unprivileged_groups=unprivileged_groups,
-                                                         privileged_groups=privileged_groups)
+    # TODO: Bug bij origin selecteren
+    model_fairness_metrics = [abs(classification_metric.statistical_parity_difference()),
+                              abs(classification_metric.false_positive_rate_difference()),
+                              abs(classification_metric.equal_opportunity_difference()),
+                              abs(classification_metric.accuracy())]
 
-            model_fairness_metrics = [abs(classification_metric.statistical_parity_difference()),
-                                      abs(classification_metric.false_positive_rate_difference()),
-                                      abs(classification_metric.equal_opportunity_difference()),
-                                      abs(classification_metric.accuracy())]
 
-            fairness_metrics.append(model_fairness_metrics)
-    else:
-        fairness_metrics = [0, 0, 0, 0]
-
-    return fairness_metrics
+    return model_fairness_metrics
 
 
 def generate_cm(predictions):
@@ -134,53 +128,39 @@ def generate_cm(predictions):
     return cm
 
 
-def make_percentage_df(percentages):
-    percentages_rounded = list(map(lambda percentage: round(percentage, 2), percentages))
-    df = pandas.DataFrame(percentages_rounded, ["Women", "Men"], columns=['qualified'])
+def make_percentage_df(df, total):
+    df['total'] = total['count']
+    df['qualified'] = df.apply(lambda row: row[len(df.columns)-2]/row[len(df.columns)-1], axis=1)
+    df = df.drop(['total', 'count'], axis=1)
     return df
 
 
-def count_hired(predictions):
-    hired_percentages = []
+def count_hired(df_p, sensitive_features):
+    qualified_dataframe = df_p[df_p['qualified'] == 1]
+    qualified_result = qualified_dataframe.groupby(sensitive_features).size().reset_index().rename(columns={0: 'count'})
 
-    for df_p in predictions:
-        percentages = [len(df_p[(df_p['gender'] == 2) & (df_p['qualified'] == 1)]) / len(df_p[df_p['gender'] == 2]),
-                       len(df_p[(df_p['gender'] == 1) & (df_p['qualified'] == 1)]) / len(df_p[df_p['gender'] == 1])]
-        dataframe_hired_model_count = make_percentage_df(percentages)
-        hired_percentages.append(dataframe_hired_model_count)
-
-    return hired_percentages
+    total_result = df_p.groupby(sensitive_features).size().reset_index().rename(columns={0: 'count'})
+    return make_percentage_df(qualified_result, total_result)
 
 
-def make_predictions(test_data, trained_models):
-    predictions = [test_data]
+def make_prediction(test_data, trained_model):
+    test_x = isolate_features(test_data)
+    prediction = trained_model.predict(test_x)
 
-    for tm in trained_models:
-        test_x = isolate_features(test_data)
-        prediction = tm.predict(test_x)
-        # print(accuracy_score(test_x, prediction))
-        dataframe_model = add_prediction_to_df(test_x, prediction, 'qualified')
-        predictions.append(dataframe_model)
-
-    return predictions
+    test_data_prediction = add_prediction_to_df(test_x, prediction, 'qualified')
+    return [test_data, test_data_prediction]
 
 
-def train_models(training_data, models):
-    training_data = rename_goodness(training_data)
+def train_model(training_data, model):
     training_x = isolate_features(training_data)
     training_y = isolate_prediction(training_data)
-    trained_models = []
 
-    # Modellen fitten
-    for m in models:
-        trained_models.append(m.fit(training_x, training_y.values.ravel()))
-    return trained_models
-
+    return model.fit(training_x, training_y.values.ravel())
 
 def pipeline(training_data, models):
     cross_val(training_data, models)
 
-    trained_models = train_models(training_data, models)
+    trained_models = train_model(training_data, models)
     return trained_models
 
     # gender_confusion_matrices(test_data)
@@ -201,6 +181,9 @@ def make_preview(data):
     data = data.sample(10)
     return data
 
+def make_nonbias_environment():
+    seed = 1
+    return HiringScenario(seed=seed)
 
 def setup_environment(scenario, sensitive_features):
     seed = 1
@@ -232,12 +215,10 @@ def setup_bias_environment(sensitive_features):
     np.random.seed(seed)
     bias_environment = HiringScenario(seed=seed)
 
-    bias_environment.description = "Men are more desirable than women"
-    if "Gender" in sensitive_features:
-        print("gender bias added")
-        bias_environment.feature_biases = [FeatureBias(HiringFeature.gender, Gender.male, 2.0)]
-    if "Origin" in sensitive_features:
-        print("origin bias added")
+    if 'gender' in sensitive_features:
+        bias_environment.feature_biases.append(FeatureBias(HiringFeature.gender, Gender.male, 2.0))
+
+    if 'origin' in sensitive_features:
         bias_environment.feature_biases.append(FeatureBias(HiringFeature.origin, Origin.belgium, 2.0))
 
     return bias_environment
