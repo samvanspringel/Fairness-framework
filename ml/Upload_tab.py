@@ -119,7 +119,7 @@ def upload_get_app_callbacks(app):
 
 
             #fig_percentage_hired = px.histogram(results['count_qualified_model'], y='qualified')
-            # TODO: x-as aanpassen dmv extra column en x=column
+
             count_df = add_description_column(descriptive_df(results['count_qualified_model']), sensitive_features)
 
             fig_percentage_hired = px.bar(count_df, y='qualified', x='description')
