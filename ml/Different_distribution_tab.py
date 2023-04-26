@@ -78,7 +78,7 @@ def dd_get_app_callbacks(app):
     )
     def update(model, sensitive_features):
         # Different distribution
-        scenarios_elements = load_scenario('Different distribution', sensitive_features)
+        scenarios_elements = load_scenario('Different distribution', sensitive_features, model)
 
         fig_percentage_hired = px.histogram(scenarios_elements['Different distribution'][model]['df-hired'],
                                             x=['Women', 'Men'], y='qualified',

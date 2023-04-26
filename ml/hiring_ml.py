@@ -47,7 +47,10 @@ def rename_goodness(data):
 
 
 def isolate_features(data):
-    return data.drop(['qualified'], axis=1)
+    if 'qualified' in data.columns:
+        return data.drop(['qualified'], axis=1)
+    else:
+        return data
 
 
 def isolate_prediction(data):
@@ -75,7 +78,7 @@ def change_types(data):
 def calculate_fairness(prediction, sensitive_attributes, output):
     dataset_gt = change_types(prediction)
 
-    dataset = StandardDataset(df=dataset_gt,
+    dataset = StandardDataset(df=prediction,
                               label_name=output,
                               favorable_classes=[1],
                               protected_attribute_names=sensitive_attributes,

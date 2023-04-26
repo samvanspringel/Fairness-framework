@@ -79,7 +79,7 @@ def bias_get_app_callbacks(app):
     def update(model, sensitive_features):
 
         # Bias scenario
-        scenarios_elements = load_scenario('Bias', sensitive_features)
+        scenarios_elements = load_scenario('Bias', sensitive_features, model)
 
         fig_percentage_hired = px.histogram(scenarios_elements['Bias'][model]['df-hired'],
                                             x=['Women', 'Men'], y='qualified',

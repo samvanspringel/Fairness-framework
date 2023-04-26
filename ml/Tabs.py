@@ -4,17 +4,19 @@ from dash import dcc, html
 TABS_HEADER_ID = "tabs_header"
 TABS_DIV_ID = "tabs_div"
 # Tab IDs
-TAB_HOME = "tab_home"
+TAB_UPLOAD = "tab_upload"
 TAB_BASELINE = "tab_baseline"
 TAB_DD = "tab_dd"
 TAB_BIAS = "tab_bias"
 
 all_tabs = {
-    TAB_HOME: "Home",
+    TAB_UPLOAD: "Upload",
     TAB_BASELINE: "Baseline",
     TAB_DD: "Different distribution",
-    TAB_BIAS: "Bias"
+    TAB_BIAS: "Bias",
 }
+
+tab_list = [TAB_UPLOAD, TAB_BASELINE, TAB_DD, TAB_BIAS]
 
 
 def get_tab_layout(tab_id, start_tab, tab_id_names, tab_div_id, top="0%", layout_id=None):

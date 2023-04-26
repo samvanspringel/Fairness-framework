@@ -94,7 +94,7 @@ def baseline_get_app_callbacks(app):
     def update(model, sensitive_features):
 
         # Base
-        scenarios_elements = load_scenario('Base', sensitive_features)
+        scenarios_elements = load_scenario('Base', sensitive_features, model)
 
         fig_percentage_hired = px.histogram(scenarios_elements['Base'][model]['df-hired'],
                                             x=['Women', 'Men'], y='qualified',
