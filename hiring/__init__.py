@@ -90,24 +90,33 @@ class State(object):
 
 class FeatureBias(object):
     """Bias on goodness score for a given feature"""
-    def __init__(self, feature, feature_value, bias):
-        self.feature = feature
-        self.feature_value = feature_value
+    def __init__(self, features, feature_values, bias):
+        self.features = features
+        self.feature_values = feature_values
         self.bias = bias
 
     def get_bias(self, state: State):
         """Get the amount of bias to add to the goodness score for the given state"""
-        # feature_value is a list of allowed values
-        if isinstance(self.feature_value, Iterable) and not isinstance(self.feature_value, str):
-            add_bias = lambda v: v in self.feature_value
-        # The feature_value is a function
-        elif isinstance(self.feature_value, types.FunctionType):
-            add_bias = self.feature_value
-        # Only if equal to the given feature value
-        else:
-            add_bias = lambda v: v == self.feature_value
+        # features is a single feature
+        if not isinstance(self.features, Iterable):
+            self.features = [self.features]
+            self.feature_values = [self.feature_values]
 
-        if add_bias(state[self.feature]):
+        additions = []
+        for feature, feature_value in zip(self.features, self.feature_values):
+            # feature_value is a list of allowed values
+            if isinstance(feature_value, Iterable) and not isinstance(feature_value, str):
+                add_bias = lambda v: v in feature_value
+            # The feature_value is a function
+            elif isinstance(feature_value, types.FunctionType):
+                add_bias = feature_value
+            # Only if equal to the given feature value
+            else:
+                add_bias = lambda v: v == feature_value
+            additions.append(add_bias(state[feature]))
+
+        # Add bias only if all conditions are met
+        if all(additions):
             return self.bias
         else:
             return 0

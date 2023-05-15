@@ -5,6 +5,7 @@ TABS_HEADER_ID = "tabs_header"
 TABS_DIV_ID = "tabs_div"
 # Tab IDs
 TAB_UPLOAD = "tab_upload"
+TAB_FAIRNESS = "tab_fairness"  # TODO
 TAB_BASELINE = "tab_baseline"
 TAB_DD = "tab_dd"
 TAB_BIAS = "tab_bias"
@@ -16,8 +17,11 @@ all_tabs = {
     TAB_BIAS: "Bias",
 }
 
-tab_list = [TAB_UPLOAD, TAB_BASELINE, TAB_DD, TAB_BIAS]
+tab_list = [TAB_UPLOAD, TAB_BASELINE, TAB_DD, TAB_BIAS]  # TODO
 
+# TODO
+NEXT_BUTTON = "next"
+PREVIOUS_BUTTON = "previous"
 
 def get_tab_layout(tab_id, start_tab, tab_id_names, tab_div_id, top="0%", layout_id=None):
     background = "#ffffff"  # TODO based on dark_mode

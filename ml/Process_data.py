@@ -1,4 +1,6 @@
 import hiring_ml as hire
+import pandas
+import numpy as np
 
 # Modellen
 from sklearn.neighbors import KNeighborsClassifier
@@ -14,10 +16,13 @@ model_mapping = {
 
 sensitive_feature_mapping = {
     'Gender': "gender",
-    'Origin': "origin"
+    'Nationality': "nationality",
+    'Age': "age",
+    'Married': "married"
 }
 
-SPLIT_PERCENTAGE = 0.2
+SPLIT_PERCENTAGE = 0.1
+N = 20000
 
 
 def combine_row(row, sensitive_features):
@@ -33,18 +38,44 @@ def add_description_column(df, sf):
     return df
 
 
-def descriptive_df(df):
+def descriptive_age(data):
+    df = data.copy()
+
+    if 'age' in df.columns:
+        df['age'] = df['age'].replace([0, 1], ['Under 50', 'Over 50'])
+
+    return df
+
+
+def descriptive_columns(data):
+    df = data.copy()
     if 'gender' in df.columns:
-        df['gender'] = df['gender'].replace([1, 2], ['Male', 'Female'])
-    if 'origin' in df.columns:
-        df['origin'] = df['origin'].replace([1, 2, 3], ['Belgian', 'FB', 'Foreign'])
+        df['gender'] = df['gender'].replace([0, 1], ['Male', 'Female'])
+    if 'nationality' in df.columns:
+        df['nationality'] = df['nationality'].replace([0, 1], ['Belgian', 'Foreign'])
     if 'degree' in df.columns:
         df['degree'] = df['degree'].replace([0, 1], ['No', 'Yes'])
     if 'extra_degree' in df.columns:
         df['extra_degree'] = df['extra_degree'].replace([0, 1], ['No', 'Yes'])
+    if 'married' in df.columns:
+        df['married'] = df['married'].replace([0, 1], ['Not married', 'Married'])
+    return df
+
+
+def descriptive_df(data):
+    df = data.copy()
+    if 'gender' in df.columns:
+        df['gender'] = df['gender'].replace([0, 1], ['Male', 'Female'])
+    if 'nationality' in df.columns:
+        df['nationality'] = df['nationality'].replace([0, 1], ['Belgian', 'Foreign'])
+    if 'degree' in df.columns:
+        df['degree'] = df['degree'].replace([0, 1], ['No', 'Yes'])
+    if 'extra_degree' in df.columns:
+        df['extra_degree'] = df['extra_degree'].replace([0, 1], ['No', 'Yes'])
+    if 'married' in df.columns:
+        df['married'] = df['married'].replace([0, 1], ['Not married', 'Married'])
     if 'qualified' in df.columns:
         df['qualified'] = df['qualified'].replace([0, 1], ['No', 'Yes'])
-
     return df
 
 
@@ -58,26 +89,67 @@ def make_prediction_with_model(model, test_data):
     return prediction
 
 
-def compute_fairness(prediction, sf, output_label):
-    return hire.calculate_fairness(prediction, sf, output_label)
+def compute_fairness(simulator_eval, prediction, sf, output_label):
+    return hire.calculate_fairness(simulator_eval, prediction, sf, output_label)
+
+
+def preprocess_dataset(test_data):
+    return hire.preprocess_test_data(test_data)
+
+
+def map_age(df):
+    if 'age' in df.columns:
+        df.loc[df['age'] < 50, 'age'] = 0
+        df.loc[df['age'] >= 50, 'age'] = 1
+    return df
 
 
 def pipeline(model, data, sf):
     results = {}
+    data = map_age(data)
     sensitive_features = list(map(lambda feature: sensitive_feature_mapping[feature], sf))
     test_data = data.iloc[:int(len(data) * SPLIT_PERCENTAGE), :]
     training_data = data.iloc[int(len(data) * SPLIT_PERCENTAGE):, :]
+
     trained_model = train_model(training_data, model)
     prediction = make_prediction_with_model(trained_model, test_data)
-    unbiased_evaluation = prediction[0]
+
+    simulator_evaluation = prediction[0]
     model_prediction = prediction[1]
 
-    results['unbiased_evaluation'] = unbiased_evaluation
+    results['simulator_evaluation'] = simulator_evaluation
     results['model_prediction'] = model_prediction
-    results['fairness_notions_unbiased'] = compute_fairness(unbiased_evaluation, sensitive_features, 'qualified')
-    results['fairness_notions_model'] = compute_fairness(model_prediction, sensitive_features, 'qualified')
-    results['count_qualified_unbiased'] = hire.count_hired(unbiased_evaluation, sensitive_features)
+    results['fairness_notions_unbiased'] = compute_fairness(simulator_evaluation, model_prediction, sensitive_features,
+                                                            'qualified')
+    results['fairness_notions'] = compute_fairness(simulator_evaluation, model_prediction, sensitive_features,
+                                                   'qualified')
+    results['count_qualified_unbiased'] = hire.count_hired(simulator_evaluation, sensitive_features)
+
     results['count_qualified_model'] = hire.count_hired(model_prediction, sensitive_features)
+    results['confusion_matrix'] = hire.generate_cm(simulator_evaluation, model_prediction)
+    results['fitted_model'] = trained_model
+
+    return results
+
+
+def mitigation_pipeline(dataset, sf, fitted_model):
+    results = {}
+    sensitive_features = list(map(lambda feature: sensitive_feature_mapping[feature], sf))
+
+    test_data = dataset.iloc[:int(len(dataset) * SPLIT_PERCENTAGE), :]
+    training_data = dataset.iloc[int(len(dataset) * SPLIT_PERCENTAGE):, :]
+
+    prediction = hire.calibrated_equalized_odds(training_data, test_data, fitted_model, sensitive_features)
+    simulator_evaluation = prediction[0]
+    mitigated_prediction = prediction[1]
+
+    results['simulator_evaluation'] = simulator_evaluation
+    results['model_prediction'] = mitigated_prediction
+    results['fairness_notions'] = compute_fairness(simulator_evaluation, mitigated_prediction, sensitive_features,
+                                                   'qualified')
+
+    results['count_qualified_model'] = hire.count_hired(mitigated_prediction, sensitive_features)
+
     return results
 
 
@@ -86,36 +158,26 @@ def load_scenario(scenario, sf, model):
     sensitive_features = list(map(lambda feature: sensitive_feature_mapping[feature], sf))
     environment = hire.setup_environment(scenario, sensitive_features)
 
-    training_data = hire.rename_goodness(hire.generate_training_data(environment, 1000))
-    test_data = hire.rename_goodness(hire.generate_test_data(environment, 1000))
+    candidates = environment.create_dataset(N, show_goodness=True, rounding=5)
 
-    trained_model = hire.train_model(training_data, model_mapping[model])
-    predictions = hire.make_prediction(test_data, trained_model)
+    data = hire.rename_goodness(candidates)
 
-    output_label = "qualified"
-    fairness_notions = hire.calculate_fairness(predictions[1], sensitive_features, output_label)
+    test_data = data.iloc[:int(len(data) * SPLIT_PERCENTAGE), :]
+    training_data = data.iloc[int(len(data) * SPLIT_PERCENTAGE):, :]
 
-    dataframes_count_hired = hire.count_hired(predictions[1], sensitive_features)
-    # cm = hire.generate_cm(predictions)
+    trained_model = train_model(training_data, model)
+    prediction = make_prediction_with_model(trained_model, test_data)
 
-    scenarios_elements[scenario] = {'Dataset': {  # 'cm-women-hired': cm[0],
-        # 'cm-men-hired': cm[1],
-        'df-hired': dataframes_count_hired[0],
-        'fairness': fairness_notions[0],
-        'df': predictions[0]
-    },
+    simulator_evaluation = prediction[0]
+    model_prediction = prediction[1]
 
-        'Decision tree': {  # 'cm-women-hired': cm[2],
-            # 'cm-men-hired': cm[3],
-            'df-hired': dataframes_count_hired[1],
-            'fairness': fairness_notions[1],
-            'df': predictions[1]
-        },
-        'k-Nearest neighbours': {  # 'cm-women-hired': cm[4],
-            # 'cm-men-hired': cm[5],
-            'df-hired': dataframes_count_hired[2],
-            'fairness': fairness_notions[2],
-            'df': predictions[2]
-        },
-    }
-    return scenarios_elements
+    results['simulator_evaluation'] = simulator_evaluation
+    results['model_prediction'] = model_prediction
+    results['fairness_notions_unbiased'] = compute_fairness(simulator_evaluation, sensitive_features, 'qualified')
+    results['fairness_notions_model'] = compute_fairness(simulator_evaluation, model_prediction, sensitive_features,
+                                                         'qualified')
+    results['count_qualified_unbiased'] = hire.count_hired(simulator_evaluation, sensitive_features)
+    results['count_qualified_model'] = hire.count_hired(model_prediction, sensitive_features)
+    results['confusion_matrix'] = hire.generate_cm(simulator_evaluation, model_prediction)
+
+    return results

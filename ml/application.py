@@ -6,12 +6,18 @@ from Baseline_tab import baseline_get_tab_dcc, baseline_get_app_callbacks
 from Different_distribution_tab import dd_get_tab_dcc, dd_get_app_callbacks
 from Bias_tab import bias_get_tab_dcc, bias_get_app_callbacks
 from Upload_tab import upload_get_tab_dcc, upload_get_app_callbacks
+# TODO:
+import Upload_tab
+
 
 def get_app_callbacks(app):
     @app.callback(Output(TABS_DIV_ID, 'children'), Input(TABS_HEADER_ID, 'value'))
     def render_content(tab):
         tab_mapping = {
-            TAB_UPLOAD: [upload_get_tab_dcc],
+            # TODO:
+            # TAB_UPLOAD: [upload_get_tab_dcc],
+            TAB_UPLOAD: [Upload_tab.upload_get_tab_dcc],
+            #
             TAB_BASELINE: [baseline_get_tab_dcc],
             TAB_DD: [dd_get_tab_dcc],
             TAB_BIAS: [bias_get_tab_dcc]
@@ -24,8 +30,9 @@ def get_app_callbacks(app):
     baseline_get_app_callbacks(app)  # Pass on shared variables/objects to all your callbacks in different files
     dd_get_app_callbacks(app)
     bias_get_app_callbacks(app)
-    upload_get_app_callbacks(app)
-
+    # TODO:
+    # upload_get_app_callbacks(app)
+    Upload_tab.upload_get_app_callbacks(app)
 
 if __name__ == '__main__':
     START_TAB = TAB_UPLOAD  # Choose here which tab to show when loading in app

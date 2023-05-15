@@ -7,11 +7,18 @@ import pandas
 from sklearn.model_selection import cross_val_score, KFold
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
+
+# AIF360
+from aif360.sklearn.preprocessing import *
+from aif360.sklearn.postprocessing import *
 from aif360.datasets import StandardDataset
 from aif360.metrics import ClassificationMetric
 
+from sklearn.metrics import accuracy_score
+
 from hiring import FeatureBias
-from hiring.features import HiringFeature, Gender, GenderDescription, Origin, OriginDescription
+from hiring.features import HiringFeature, Gender, Nationality
+from hiring.features import ApplicantGenerator
 
 from hiring.hire import HiringScenario
 import pandas as pd
@@ -75,18 +82,19 @@ def change_types(data):
     return data.astype(str).astype(float).astype(int)
 
 
-def calculate_fairness(prediction, sensitive_attributes, output):
-    dataset_gt = change_types(prediction)
-
-    dataset = StandardDataset(df=prediction,
+def calculate_fairness(simulator_df, prediction_df, sensitive_attributes, output):
+    dataset = StandardDataset(df=prediction_df,
                               label_name=output,
                               favorable_classes=[1],
                               protected_attribute_names=sensitive_attributes,
-                              privileged_classes=[[1]])
+                              privileged_classes=[[0]])
 
-    prediction = prediction[['qualified']]
-    dataset_model = dataset.copy()
-    dataset_model.labels = prediction.values
+    dataset_model = StandardDataset(df=simulator_df,
+                                    label_name=output,
+                                    favorable_classes=[1],
+                                    protected_attribute_names=sensitive_attributes,
+                                    privileged_classes=[[0]])
+
     a = sensitive_attributes[0]
     i = dataset_model.protected_attribute_names.index(a)
     privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]}]
@@ -96,44 +104,56 @@ def calculate_fairness(prediction, sensitive_attributes, output):
                                                  unprivileged_groups=unprivileged_groups,
                                                  privileged_groups=privileged_groups)
 
-    # TODO: Bug bij origin selecteren
-    model_fairness_metrics = [abs(classification_metric.statistical_parity_difference()),
-                              abs(classification_metric.false_positive_rate_difference()),
-                              abs(classification_metric.equal_opportunity_difference()),
-                              abs(classification_metric.accuracy())]
+    fairness = {"Fairness notions": [abs(classification_metric.statistical_parity_difference()),
+                                     abs(classification_metric.false_positive_rate_difference()),
+                                     abs(classification_metric.equal_opportunity_difference()),
+                                     1 - abs(classification_metric.consistency(n_neighbors=20).flat[0])]}
+
+    fairness_df = pd.DataFrame(data=fairness, index=['Statistical parity', 'Predictive equality', 'Equal opportunity',
+                                                     'Inconsistency'])
+    return fairness_df
 
 
-    return model_fairness_metrics
+def sample_reweighing(training_data, test_data, fitted_model, sensitive_features):
+    training_x = isolate_features(training_data)
+    training_y = isolate_prediction(training_data)
+
+    reweighing = Reweighing(prot_attr=sensitive_features)
+
+    pre_processor = ReweighingMeta(estimator=fitted_model, reweigher=reweighing)
+
+    pre_processor.fit(X=training_x, y=training_y)
+
+    return make_prediction(test_data, pre_processor)
 
 
-def generate_cm(predictions):
-    cm = []
+def calibrated_equalized_odds(training_data, test_data, fitted_model, sensitive_features):
+    ceo = CalibratedEqualizedOdds(prot_attr=sensitive_features, cost_constraint='fpr')
 
-    df_dataset_prediction = predictions[0]
+    post_processor = PostProcessingMeta(estimator=fitted_model, postprocessor=ceo, prefit=True, val_size=18000)
 
-    dataset_prediction_men = df_dataset_prediction.loc[df_dataset_prediction['gender'] == 1]
-    dataset_prediction_women = df_dataset_prediction.loc[df_dataset_prediction['gender'] == 2]
+    training_x = isolate_features(training_data)
+    training_y = isolate_prediction(training_data)
 
-    men_true = isolate_prediction(dataset_prediction_men)
-    women_true = isolate_prediction(dataset_prediction_women)
+    post_processor.fit(training_x, training_y)
 
-    for df_p in predictions:
-        df_model_prediction_women = df_p.loc[df_p['gender'] == 2]
-        df_model_prediction_men = df_p.loc[df_p['gender'] == 1]
+    return make_prediction(test_data, post_processor)
 
-        model_prediction_women = isolate_prediction(df_model_prediction_women)
-        model_prediction_men = isolate_prediction(df_model_prediction_men)
 
-        cm.append(confusion_matrix(y_true=women_true, y_pred=model_prediction_women))
-        cm.append(confusion_matrix(y_true=men_true, y_pred=model_prediction_men))
+def generate_cm(dataset, prediction):
+    test_y = dataset[['qualified']]
+    prediction_y = prediction[['qualified']]
+    cm = confusion_matrix(test_y, prediction_y)
 
-    # TODO: Alle aantallen delen door totaal aantal van groep
-    return cm
+    accuracy = {"Model accuracy": [accuracy_score(test_y, prediction_y)]}
+    accdf = pandas.DataFrame(data=accuracy)
+
+    return [cm, pandas.DataFrame(data=accuracy)]
 
 
 def make_percentage_df(df, total):
     df['total'] = total['count']
-    df['qualified'] = df.apply(lambda row: row[len(df.columns)-2]/row[len(df.columns)-1], axis=1)
+    df['qualified'] = df.apply(lambda row: row[len(df.columns) - 2] / row[len(df.columns) - 1], axis=1)
     df = df.drop(['total', 'count'], axis=1)
     return df
 
@@ -143,15 +163,19 @@ def count_hired(df_p, sensitive_features):
     qualified_result = qualified_dataframe.groupby(sensitive_features).size().reset_index().rename(columns={0: 'count'})
 
     total_result = df_p.groupby(sensitive_features).size().reset_index().rename(columns={0: 'count'})
+
     return make_percentage_df(qualified_result, total_result)
 
 
 def make_prediction(test_data, trained_model):
+    simulator_evaluation = test_data.copy()
+    labels_y = test_data[['qualified']]
     test_x = isolate_features(test_data)
-    prediction = trained_model.predict(test_x)
+    p = trained_model.predict(test_x)
 
-    test_data_prediction = add_prediction_to_df(test_x, prediction, 'qualified')
-    return [test_data, test_data_prediction]
+    prediction = add_prediction_to_df(test_x, p, 'qualified')
+
+    return [simulator_evaluation, prediction]
 
 
 def train_model(training_data, model):
@@ -159,17 +183,6 @@ def train_model(training_data, model):
     training_y = isolate_prediction(training_data)
 
     return model.fit(training_x, training_y.values.ravel())
-
-def pipeline(training_data, models):
-    cross_val(training_data, models)
-
-    trained_models = train_model(training_data, models)
-    return trained_models
-
-    # gender_confusion_matrices(test_data)
-
-    # test_data = rename_goodness(test_data)
-    # apply_fairness_notion('gender', 1, test_data, trained_models)
 
 
 def generate_training_data(env, num_samples):
@@ -184,16 +197,21 @@ def make_preview(data):
     data = data.sample(10)
     return data
 
+
 def make_nonbias_environment():
     seed = 1
     return HiringScenario(seed=seed)
+
 
 def setup_environment(scenario, sensitive_features):
     seed = 1
     random.seed(seed)
     np.random.seed(seed)
+
     if scenario == 'Base':
-        return HiringScenario(seed=seed)
+        applicant_generator = ApplicantGenerator(seed=seed, csv="../hiring/data/belgian_population.csv")
+        env = HiringScenario(seed=seed, applicant_generator=applicant_generator, threshold=5)
+        return env
     elif scenario == 'Different distribution':
         return setup_diff_distribution_environment()
     elif scenario == 'Bias':
@@ -204,24 +222,35 @@ def setup_diff_distribution_environment():
     seed = 1
     random.seed(seed)
     np.random.seed(seed)
-    diff_distribution_environment = HiringScenario(seed=seed)
 
-    diff_distribution_environment.description = "Historically less women"
-    diff_distribution_environment.gender_desc = GenderDescription(prob_male=0.7, prob_female=0.3)
+    applicant_generator = ApplicantGenerator(seed=seed, csv="../hiring/data/belgian_pop_diff_dist.csv")
 
-    return diff_distribution_environment
+    env = HiringScenario(seed=seed, applicant_generator=applicant_generator, threshold=5)
+
+    return env
 
 
 def setup_bias_environment(sensitive_features):
     seed = 1
     random.seed(seed)
     np.random.seed(seed)
-    bias_environment = HiringScenario(seed=seed)
+
+    applicant_generator = ApplicantGenerator(seed=seed, csv="../hiring/data/belgian_population.csv")
+    bias_env = HiringScenario(seed=seed, applicant_generator=applicant_generator, threshold=5)
+
+    bias_env.feature_biases.append(FeatureBias([HiringFeature.gender, HiringFeature.age],
+                                               [Gender.male, lambda age: age > 25], bias=2))
 
     if 'gender' in sensitive_features:
-        bias_environment.feature_biases.append(FeatureBias(HiringFeature.gender, Gender.male, 2.0))
+        bias_env.feature_biases.append(FeatureBias(HiringFeature.gender, Gender.male, 2.0))
 
-    if 'origin' in sensitive_features:
-        bias_environment.feature_biases.append(FeatureBias(HiringFeature.origin, Origin.belgium, 2.0))
+    if 'nationality' in sensitive_features:
+        bias_env.feature_biases.append(FeatureBias(HiringFeature.nationality, Nationality.belgian, 2.0))
 
-    return bias_environment
+    if 'age' in sensitive_features:
+        bias_env.feature_biases.append(FeatureBias(HiringFeature.age, lambda age: age > 25, 2.0))
+
+    if 'married' in sensitive_features:
+        bias_env.feature_biases.append(FeatureBias(HiringFeature.married, lambda married: married == 0, 2.0))
+
+    return bias_env
