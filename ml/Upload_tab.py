@@ -41,6 +41,7 @@ UPLOAD_DIV = "upload_div"
 NEXT_BUTTON_UPLOAD = "next_upload"
 NEXT_BUTTON_TRAINING_RESULTS = "next_training_results"
 NEXT_BUTTON_FAIRNESS = "next_fairness"
+NEXT_BUTTON_MITIGATION_CHOICE = "next_mitigation_choice"
 
 # TODO: zet in deze file/tab enkel de elementen en functies die door deze tab gebruikt worden
 PREVIEW_HOME = "Preview_data_UPLOAD"
@@ -52,6 +53,9 @@ sf_options = ["Gender", "Nationality", "Age", "Married"]
 
 models_options = ["Dataset", "Decision tree", "k-Nearest neighbours"]
 DROPDOWN_MODELS_HOME = "Dropdown_models_UPLOAD"
+
+DROPDOWN_MITIGATION = "Dropdown_mitigation"
+mitigation_options = ["Pre-processing: Sample Reweighing", "Post-processing: Calibrated Equalized Odds"]
 
 CM_GRAPH = "Confusion_matrix"
 SCENARIO = "Scenario"
@@ -250,7 +254,25 @@ def step_results_fairness():
     return layout_children
 
 def step_choose_mitigation():
-    pass
+    dropdown_mitigating_technique = dcc.Dropdown(id=DROPDOWN_MITIGATION, options=mitigation_options,
+                                                 value=mitigation_options[0], clearable=False,
+                                                 style={'display': 'block'})
+
+    layout_children = [
+        ### Header under tab ###
+        html.Div([
+            html.H3(f"Choose your mitigation technique."),
+            dropdown_mitigating_technique,
+            html.Br(),
+
+        ], style={'position': 'sticky', "z-index": "999",
+                  "width": "100%", 'background': '#FFFFFF', "top": "0%"}),
+        ########################
+        html.Br(),
+        html.Button(id=NEXT_BUTTON_MITIGATION_CHOICE, disabled=False, children="Next"),
+    ]
+    # Return tab layout
+    return layout_children
 
 def step_results_mitigation():
     global results, results_mitigation, sensitive_features
@@ -360,9 +382,9 @@ def upload_get_app_callbacks(app):
         elif step == 3:
             return [step_results_fairness()]
         elif step == 4:
-            return [step_results_mitigation()]
-        elif step == 5:
             return [step_choose_mitigation()]
+        elif step == 5:
+            return [step_results_mitigation()]
         # ...
 
     @app.callback(
@@ -430,15 +452,30 @@ def upload_get_app_callbacks(app):
 
     @app.callback(
         [Output(STEPS_SLIDER, "value", allow_duplicate=True)],
-        [Input(NEXT_BUTTON_FAIRNESS, "n_clicks"), Input(NEXT_BUTTON_FAIRNESS, "disabled")
-         ],
+        [Input(NEXT_BUTTON_FAIRNESS, "n_clicks"), Input(NEXT_BUTTON_FAIRNESS, "disabled")],
         prevent_initial_call=True
     )
-    def update_mitigation_plot(n_clicks, disabled):
+    def update_mitigation_choice(n_clicks, disabled):
+        global results_mitigation
+        if n_clicks is None or n_clicks == 0 or disabled:
+            raise PreventUpdate
+        print("Choosing mitigation technique...")
+        return [4]
+
+    @app.callback(
+        [Output(STEPS_SLIDER, "value", allow_duplicate=True)],
+        [Input(NEXT_BUTTON_MITIGATION_CHOICE, "n_clicks"), Input(NEXT_BUTTON_MITIGATION_CHOICE, "disabled"),
+         Input(DROPDOWN_MITIGATION, "value")],
+        prevent_initial_call=True
+    )
+    def update_mitigation_plot(n_clicks, disabled, mitigation_technique):
         global results_mitigation
         if n_clicks is None or n_clicks == 0 or disabled:
             raise PreventUpdate
         print("Mitigating dataset...")
-        results_mitigation = mitigation_pipeline(results['model_prediction'], sensitive_features,
+        results_mitigation = mitigation_pipeline(mitigation_technique,
+                                                 uploaded_dataset,
+                                                 results['model_prediction'],
+                                                 sensitive_features,
                                                  results['fitted_model'])
-        return [4]
+        return [5]

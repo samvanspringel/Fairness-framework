@@ -132,7 +132,7 @@ def pipeline(model, data, sf):
     return results
 
 
-def mitigation_pipeline(dataset, sf, fitted_model):
+def mitigation_pipeline(technique, dataset, prediction_df, sf, fitted_model):
     results = {}
     sensitive_features = list(map(lambda feature: sensitive_feature_mapping[feature], sf))
 
