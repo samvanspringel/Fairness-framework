@@ -23,6 +23,7 @@ sensitive_feature_mapping = {
 
 SPLIT_PERCENTAGE = 0.1
 N = 20000
+AMOUNT_OF_SEEDS = 30
 
 
 def combine_row(row, sensitive_features):
@@ -104,6 +105,10 @@ def map_age(df):
     return df
 
 
+def average(list):
+    return sum(list) / len(list)
+
+
 def pipeline(model, data, sf):
     results = {}
     data = map_age(data)
@@ -139,7 +144,7 @@ def mitigation_pipeline(technique, dataset, prediction_df, sf, fitted_model):
     test_data = dataset.iloc[:int(len(dataset) * SPLIT_PERCENTAGE), :]
     training_data = dataset.iloc[int(len(dataset) * SPLIT_PERCENTAGE):, :]
 
-    prediction = hire.calibrated_equalized_odds(training_data, test_data, fitted_model, sensitive_features)
+    prediction = hire.sample_reweighing(dataset, sensitive_features, 'qualified')
     simulator_evaluation = prediction[0]
     mitigated_prediction = prediction[1]
 
@@ -153,31 +158,82 @@ def mitigation_pipeline(technique, dataset, prediction_df, sf, fitted_model):
     return results
 
 
+def combine_count_df(count_dataframes):
+    count = count_dataframes[0]
+
+    for d in range(1, AMOUNT_OF_SEEDS):
+        count['qualified'] = count['qualified'] + count_dataframes[d]['qualified']
+    count['qualified'] = count['qualified'] / AMOUNT_OF_SEEDS
+    return count
+
+
+def combine_confusion_matrices(confusion_matrices):
+    cm = confusion_matrices[0]
+    for c in range(1, AMOUNT_OF_SEEDS):
+        for i in range(2):
+            for j in range(2):
+                cm[i][j] = cm[i][j] + confusion_matrices[c][i][j]
+    for i in range(2):
+        for j in range(2):
+            cm[i][j] = cm[i][j]/AMOUNT_OF_SEEDS
+    return cm
+
+
 def load_scenario(scenario, sf, model):
     results = {}
     sensitive_features = list(map(lambda feature: sensitive_feature_mapping[feature], sf))
-    environment = hire.setup_environment(scenario, sensitive_features)
 
-    candidates = environment.create_dataset(N, show_goodness=True, rounding=5)
+    fairness = {"Fairness notions": [0, 0, 0, 0]}
 
-    data = hire.rename_goodness(candidates)
+    fairness_df = pandas.DataFrame(data=fairness, index=['Statistical parity', 'Predictive equality',
+                                                         'Equal opportunity', 'Inconsistency'])
+    accuracy = 0
 
-    test_data = data.iloc[:int(len(data) * SPLIT_PERCENTAGE), :]
-    training_data = data.iloc[int(len(data) * SPLIT_PERCENTAGE):, :]
+    count_dataframes = []
+    confusion_matrices = []
 
-    trained_model = train_model(training_data, model)
-    prediction = make_prediction_with_model(trained_model, test_data)
+    for i in range(0, AMOUNT_OF_SEEDS):
+        print(f"Processing for seed {i}")
+        environment = hire.setup_environment(scenario, sensitive_features, i)
+        candidates = environment.create_dataset(10000, show_goodness=True, rounding=5)
 
-    simulator_evaluation = prediction[0]
-    model_prediction = prediction[1]
+        data = hire.rename_goodness(candidates)
+        data = map_age(data)
+        test_data = data.iloc[:int(len(data) * SPLIT_PERCENTAGE), :]
+        training_data = data.iloc[int(len(data) * SPLIT_PERCENTAGE):, :]
 
-    results['simulator_evaluation'] = simulator_evaluation
-    results['model_prediction'] = model_prediction
-    results['fairness_notions_unbiased'] = compute_fairness(simulator_evaluation, sensitive_features, 'qualified')
-    results['fairness_notions_model'] = compute_fairness(simulator_evaluation, model_prediction, sensitive_features,
-                                                         'qualified')
-    results['count_qualified_unbiased'] = hire.count_hired(simulator_evaluation, sensitive_features)
-    results['count_qualified_model'] = hire.count_hired(model_prediction, sensitive_features)
-    results['confusion_matrix'] = hire.generate_cm(simulator_evaluation, model_prediction)
+        trained_model = train_model(training_data, model)
+        prediction = make_prediction_with_model(trained_model, test_data)
+
+        simulator_evaluation = prediction[0]
+        model_prediction = prediction[1]
+
+        fairness_notions_seed = compute_fairness(simulator_evaluation, model_prediction,
+                                                 sensitive_features, 'qualified')
+
+        fairness_df['Fairness notions'] = fairness_df['Fairness notions'] + fairness_notions_seed['Fairness notions']
+
+        count_df = hire.count_hired(model_prediction, sensitive_features)
+        cm_accuracy = hire.generate_cm(simulator_evaluation, model_prediction)
+
+        confusion_matrices.append(cm_accuracy[0])
+
+        accuracy += cm_accuracy[1]
+
+        count_dataframes.append(count_df)
+
+    count = combine_count_df(count_dataframes)
+
+    confusion_matrix = combine_confusion_matrices(confusion_matrices)
+
+    fairness_df['Fairness notions'] = fairness_df['Fairness notions'] / AMOUNT_OF_SEEDS
+
+    results['fairness_notions'] = fairness_df
+
+    results['accuracy'] = accuracy / AMOUNT_OF_SEEDS
+
+    results['count_qualified_model'] = count
+
+    results['confusion_matrix'] = confusion_matrix
 
     return results

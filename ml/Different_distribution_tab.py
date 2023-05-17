@@ -1,63 +1,65 @@
 from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output
 from Tabs import horizontal_div
-from Process_data import load_scenario
+from Process_data import *
 import plotly.express as px
-import plotly.graph_objects as go
+color_sequence = px.colors.qualitative.Safe
 
 PREVIEW_DD = "Preview_data_DD"
 
 CHECKLIST_SENSITIVE_FEATURE_DD = "Checklist_sensitive_feature_DD"
-sf_options = ["Gender", "Origin"]
+sf_options = ["Gender", "Nationality", "Age", "Married"]
 
 DROPDOWN_MODELS_DD = "Dropdown_models_DD"
 models_options = ["Dataset", "Decision tree", "k-Nearest neighbours"]
 
-CM_GRAPH_WOMEN_DD = "Confusion_matrix_model_women_DD "
-CM_GRAPH_MEN_DD = "Confusion_matrix_model_men_DD "
+CM_GRAPH = "Confusion_matrix_DD"
 SCENARIO = "Scenario"
 classification_labels = ["Not qualified", "Qualified"]
 
 GRAPH_AMOUNT_HIRED_DD = "Amount_hired_gender_DD "
-GRAPH_FAIRNESS_NOTIONS_DD = "Graph fairness notions_DD "
-GRAPH_SUNBURST_DD = "Graph_sunburst_DD"
-
+GRAPH_FAIRNESS_DD = "Graph fairness notions_DD "
+GRAPH_ACCURACY_DD = "Graph_fairness_DD"
 
 def dd_get_tab_dcc():
-
+    checklist_sensitive_features = dcc.Checklist(id=CHECKLIST_SENSITIVE_FEATURE_DD, options=sf_options,
+                                                 value=[sf_options[0]], inline=True, style={'display': 'block'})
     dropdown_models = dcc.Dropdown(id=DROPDOWN_MODELS_DD, options=models_options, value=models_options[1],
                                    clearable=False)
-    checklist_sensitive_features = dcc.Checklist(id=CHECKLIST_SENSITIVE_FEATURE_DD, options=sf_options, value=[sf_options[0]])
-    sunburst_plot = dcc.Graph(id=GRAPH_SUNBURST_DD)
     hired_graph = dcc.Graph(id=GRAPH_AMOUNT_HIRED_DD)
-    cm_women = dcc.Graph(id=CM_GRAPH_WOMEN_DD)
-    cm_men = dcc.Graph(id=CM_GRAPH_MEN_DD)
-    fairness_graph = dcc.Graph(id=GRAPH_FAIRNESS_NOTIONS_DD)
+    cm = dcc.Graph(id=CM_GRAPH)
+    fairness_graph = dcc.Graph(id=GRAPH_FAIRNESS_DD)
+    accuracy = dcc.Graph(id=GRAPH_ACCURACY_DD)
 
     width = "30%"
+    graph_width = "40%"
     width2 = "10%"
     space_width = "2.5%"
 
     layout = html.Div([
         ### Header under tab ###
         html.Div([
+            html.H1("Highlighting & Mitigating Discrimination in Job Hiring Scenarios"),
             html.Br(),
             html.H3("Data"),
             html.Hr(),
-            horizontal_div([None, html.H4("Machine learning model"), dropdown_models, None,
-                            html.H4("Sensitive feature"), checklist_sensitive_features],
-                           width=[None, width2, width, None, width2, width],
+            dropdown_models,
+            checklist_sensitive_features,
+            html.H2("Visualisation"),
+            html.Br(),
+            horizontal_div([None, html.H4("\n \n  Distribution"),
+                            html.P(" How the applicants are distributed based on sensitive features"),
+                            None, html.H4("\n \n Qualified"),
+                            html.P("How the applicants are distributed based on sensitive features")],
+                           width=[None, width2, graph_width, None, width2, width],
                            space_width=space_width),
-            html.H3("Sample"),
-            html.P("Sample of 10 applicants"),
-            dash_table.DataTable(id=PREVIEW_DD),
-            horizontal_div([None, html.H4("Distribution"), sunburst_plot, None, html.H4("Qualified"), hired_graph],
-                           width=[None, width2, width, None, width2, width],
+            horizontal_div([None, None, cm, None, None, accuracy],
+                           width=[None, width2, graph_width, None, width2, graph_width],
                            space_width=space_width),
-            horizontal_div([None, html.H4("Confusion matrix women"), cm_women, None,
-                            html.H4("Confusion matrix men"), cm_men],
-                           width=[None, width2, width, None, width2, width],
-                           space_width=space_width), fairness_graph,
+            hired_graph,
+            html.Br(),
+            html.H2("Fairness"),
+            fairness_graph,
             html.Hr(),
         ], style={'position': 'sticky', "z-index": "999",
                   "width": "100%", 'background': '#FFFFFF', "top": "0%"}),
@@ -71,36 +73,31 @@ def dd_get_tab_dcc():
 
 def dd_get_app_callbacks(app):
     @app.callback(
-        [Output(GRAPH_AMOUNT_HIRED_DD , "figure"), Output(CM_GRAPH_WOMEN_DD , "figure"),
-         Output(CM_GRAPH_MEN_DD , "figure"), Output(GRAPH_FAIRNESS_NOTIONS_DD , "figure"),
-         Output(GRAPH_SUNBURST_DD, "figure"), Output(PREVIEW_DD, "data")],
-        [Input(DROPDOWN_MODELS_DD , "value"), Input(CHECKLIST_SENSITIVE_FEATURE_DD, "value")]
+        [Output(GRAPH_AMOUNT_HIRED_DD, "figure"),
+         Output(CM_GRAPH, "figure"), Output(GRAPH_FAIRNESS_DD, "figure"),
+         Output(GRAPH_ACCURACY_DD, "figure")],
+        [Input(DROPDOWN_MODELS_DD, "value"), Input(CHECKLIST_SENSITIVE_FEATURE_DD, "value")],
+        suppress_callback_exceptions=True
     )
     def update(model, sensitive_features):
-        # Different distribution
-        scenarios_elements = load_scenario('Different distribution', sensitive_features, model)
+        # Base
+        results = load_scenario('Different distribution', sensitive_features, model)
 
-        fig_percentage_hired = px.histogram(scenarios_elements['Different distribution'][model]['df-hired'],
-                                            x=['Women', 'Men'], y='qualified',
-                                            labels={'x': 'Gender', 'y': 'Amount qualified'})
+        count_df = add_description_column(descriptive_age(descriptive_df(results['count_qualified_model'])),
+                                          sensitive_features)
+        fig_percentage_hired = px.bar(count_df, y='qualified', x='description', color_discrete_sequence=color_sequence)
+
         fig_percentage_hired.update_layout(yaxis_title="Percentage qualified", autosize=False)
-        fig_cm_women = px.imshow(scenarios_elements['Different distribution'][model]['cm-women-hired'],
-                                 labels=dict(x="Predicted", y="True"), x=classification_labels,
-                                 y=classification_labels,
-                                 text_auto=True)
-        fig_cm_women.update_layout(autosize=False, width=400)
-        fig_cm_men = px.imshow(scenarios_elements['Different distribution'][model]['cm-men-hired'],
-                               labels=dict(x="Predicted", y="True"), x=classification_labels,
-                               y=classification_labels,
-                               text_auto=True)
-        fig_cm_men.update_layout(autosize=False, width=400)
-        fig_fairness = go.Figure(
-            [go.Bar(x=['Statistical parity', 'Predictive equality', 'Equal opportunity', 'Accuracy'],
-                    y=scenarios_elements['Different distribution'][model]['fairness'])])
 
-        fig_sunburst = px.sunburst(scenarios_elements['Different distribution'][model]['df'],
-                                   path=['gender', 'origin'], values='qualified')
+        fig_fairness = px.bar(results['fairness_notions'], y='Fairness notions',
+                              color_discrete_sequence=color_sequence)
 
-        table = scenarios_elements['Different distribution'][model]['df'].sample(10).to_dict("records")
+        fig_cm = px.imshow(results['confusion_matrix'],
+                           labels=dict(x="Predicted", y="True"), x=classification_labels,
+                           y=classification_labels,
+                           text_auto=True, color_continuous_scale=color_sequence)
 
-        return [fig_percentage_hired, fig_cm_women, fig_cm_men, fig_fairness, fig_sunburst, table]
+        fig_accuracy = px.bar(results['accuracy'], y="Model accuracy",
+                              color_discrete_sequence=color_sequence)
+
+        return [fig_percentage_hired, fig_cm, fig_fairness, fig_accuracy]

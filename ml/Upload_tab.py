@@ -209,7 +209,7 @@ def step_results_fairness():
     fig_fairness = px.bar(results['fairness_notions'], y='Fairness notions',
                           color_discrete_sequence=color_sequence)
 
-    fig_sunburst = px.sunburst(descriptive_columns(results['model_prediction']), color_discrete_sequence=color_sequence,
+    fig_sunburst = px.sunburst(descriptive_age(descriptive_columns(results['model_prediction'])), color_discrete_sequence=color_sequence,
                                path=list(map(lambda feature: sensitive_feature_mapping[feature], sensitive_features)),
                                values='qualified')
 

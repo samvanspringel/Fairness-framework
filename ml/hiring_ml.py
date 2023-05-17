@@ -9,8 +9,8 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
 
 # AIF360
-from aif360.sklearn.preprocessing import *
-from aif360.sklearn.postprocessing import *
+from aif360.algorithms.preprocessing import *
+from aif360.algorithms.postprocessing import *
 from aif360.datasets import StandardDataset
 from aif360.metrics import ClassificationMetric
 
@@ -114,20 +114,28 @@ def calculate_fairness(simulator_df, prediction_df, sensitive_attributes, output
     return fairness_df
 
 
-def sample_reweighing(training_data, test_data, fitted_model, sensitive_features):
-    training_x = isolate_features(training_data)
-    training_y = isolate_prediction(training_data)
+def sample_reweighing(df, sensitive_features, output):
+    dataset_model = StandardDataset(df=df,
+                                    label_name=output,
+                                    favorable_classes=[1],
+                                    protected_attribute_names=sensitive_features,
+                                    privileged_classes=[[0]])
+    a = sensitive_features[0]
+    i = dataset_model.protected_attribute_names.index(a)
+    privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]}]
+    unprivileged_groups = [{a: dataset_model.unprivileged_protected_attributes[i]}]
 
-    reweighing = Reweighing(prot_attr=sensitive_features)
+    reweighing = Reweighing(unprivileged_groups=unprivileged_groups, privileged_groups=privileged_groups)
 
-    pre_processor = ReweighingMeta(estimator=fitted_model, reweigher=reweighing)
+    reweighing.fit(dataset=dataset_model)
 
-    pre_processor.fit(X=training_x, y=training_y)
+    print(reweighing.transform(dataset_model))
 
-    return make_prediction(test_data, pre_processor)
+    return
 
 
 def calibrated_equalized_odds(training_data, test_data, fitted_model, sensitive_features):
+    print(sensitive_features)
     ceo = CalibratedEqualizedOdds(prot_attr=sensitive_features, cost_constraint='fpr')
 
     post_processor = PostProcessingMeta(estimator=fitted_model, postprocessor=ceo, prefit=True, val_size=18000)
@@ -203,26 +211,18 @@ def make_nonbias_environment():
     return HiringScenario(seed=seed)
 
 
-def setup_environment(scenario, sensitive_features):
-    seed = 1
-    random.seed(seed)
-    np.random.seed(seed)
-
+def setup_environment(scenario, sensitive_features, seed):
     if scenario == 'Base':
         applicant_generator = ApplicantGenerator(seed=seed, csv="../hiring/data/belgian_population.csv")
         env = HiringScenario(seed=seed, applicant_generator=applicant_generator, threshold=5)
         return env
     elif scenario == 'Different distribution':
-        return setup_diff_distribution_environment()
+        return setup_diff_distribution_environment(seed)
     elif scenario == 'Bias':
-        return setup_bias_environment(sensitive_features)
+        return setup_bias_environment(sensitive_features, seed)
 
 
-def setup_diff_distribution_environment():
-    seed = 1
-    random.seed(seed)
-    np.random.seed(seed)
-
+def setup_diff_distribution_environment(seed):
     applicant_generator = ApplicantGenerator(seed=seed, csv="../hiring/data/belgian_pop_diff_dist.csv")
 
     env = HiringScenario(seed=seed, applicant_generator=applicant_generator, threshold=5)
@@ -230,16 +230,9 @@ def setup_diff_distribution_environment():
     return env
 
 
-def setup_bias_environment(sensitive_features):
-    seed = 1
-    random.seed(seed)
-    np.random.seed(seed)
-
+def setup_bias_environment(sensitive_features, seed):
     applicant_generator = ApplicantGenerator(seed=seed, csv="../hiring/data/belgian_population.csv")
     bias_env = HiringScenario(seed=seed, applicant_generator=applicant_generator, threshold=5)
-
-    bias_env.feature_biases.append(FeatureBias([HiringFeature.gender, HiringFeature.age],
-                                               [Gender.male, lambda age: age > 25], bias=2))
 
     if 'gender' in sensitive_features:
         bias_env.feature_biases.append(FeatureBias(HiringFeature.gender, Gender.male, 2.0))
@@ -248,7 +241,7 @@ def setup_bias_environment(sensitive_features):
         bias_env.feature_biases.append(FeatureBias(HiringFeature.nationality, Nationality.belgian, 2.0))
 
     if 'age' in sensitive_features:
-        bias_env.feature_biases.append(FeatureBias(HiringFeature.age, lambda age: age > 25, 2.0))
+        bias_env.feature_biases.append(FeatureBias(HiringFeature.age, lambda age: age < 50, 2.0))
 
     if 'married' in sensitive_features:
         bias_env.feature_biases.append(FeatureBias(HiringFeature.married, lambda married: married == 0, 2.0))
