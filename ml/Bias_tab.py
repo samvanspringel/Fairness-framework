@@ -21,18 +21,25 @@ GRAPH_AMOUNT_HIRED_BIAS = "Amount_hired_gender_BIAS"
 GRAPH_FAIRNESS_NOTIONS_BIAS = "Graph_fairness_notions_BIAS"
 GRAPH_ACCURACY_BIAS = "Graph_accuracy_BIAS"
 
+GRAPH_AMOUNT_HIRED_BIAS_DATASET = "Graph fairness notions_BIAS_DATASET"
+GRAPH_FAIRNESS_BIAS_DATASET = "Graph_fairness_BIAS_DATASET"
+GRAPH_FAIRNESS_BIAS_MODEL_MITIGATED = "Graph_fairness_BIAS_MODEL_MITIGATED"
+
 def bias_get_tab_dcc():
     checklist_sensitive_features = dcc.Checklist(id=CHECKLIST_SENSITIVE_FEATURE_BIAS, options=sf_options,
                                                  value=[sf_options[0]], inline=True, style={'display': 'block'})
     dropdown_models = dcc.Dropdown(id=DROPDOWN_MODELS_BIAS, options=models_options, value=models_options[1],
                                    clearable=False)
-    hired_graph = dcc.Graph(id=GRAPH_AMOUNT_HIRED_BIAS)
+    hired_graph_model = dcc.Graph(id=GRAPH_AMOUNT_HIRED_BIAS)
+    hired_graph_dataset = dcc.Graph(id=GRAPH_AMOUNT_HIRED_BIAS_DATASET)
     cm = dcc.Graph(id=CM_GRAPH)
-    fairness_graph = dcc.Graph(id=GRAPH_FAIRNESS_NOTIONS_BIAS)
+    fairness_graph_model = dcc.Graph(id=GRAPH_FAIRNESS_NOTIONS_BIAS)
+    fairness_graph_dataset = dcc.Graph(id=GRAPH_FAIRNESS_BIAS_DATASET)
+    fairness_graph_model_mitigated = dcc.Graph(id=GRAPH_FAIRNESS_BIAS_MODEL_MITIGATED)
     accuracy = dcc.Graph(id=GRAPH_ACCURACY_BIAS)
 
     width = "30%"
-    graph_width = "40%"
+    graph_width = "30%"
     width2 = "10%"
     space_width = "2.5%"
 
@@ -45,21 +52,30 @@ def bias_get_tab_dcc():
             html.Hr(),
             dropdown_models,
             checklist_sensitive_features,
-            html.H2("Visualisation"),
-            html.Br(),
-            horizontal_div([None, html.H4("\n \n  Distribution"),
-                            html.P(" How the applicants are distributed based on sensitive features"),
-                            None, html.H4("\n \n Qualified"),
-                            html.P("How the applicants are distributed based on sensitive features")],
-                           width=[None, width2, graph_width, None, width2, width],
-                           space_width=space_width),
+
+            html.H2("Model performance"),
             horizontal_div([None, None, cm, None, None, accuracy],
                            width=[None, width2, graph_width, None, width2, graph_width],
                            space_width=space_width),
-            hired_graph,
-            html.Br(),
+
+            html.H2("Proportional evaluation"),
+            horizontal_div(
+                [None, html.H4("\n \n  Dataset"), hired_graph_dataset, None, html.H4("\n \n  Model prediction"),
+                 hired_graph_model],
+                width=[None, width2, graph_width, None, width2, graph_width],
+                space_width=space_width),
             html.H2("Fairness"),
-            fairness_graph,
+            horizontal_div(
+                [None, html.H4("\n \n  Dataset"), fairness_graph_dataset, None, html.H4("\n \n  Model prediction"),
+                 fairness_graph_model],
+                width=[None, width2, graph_width, None, width2, graph_width],
+                space_width=space_width),
+            horizontal_div(
+                [None, html.H4("\n \n  Mitigated prediction"), fairness_graph_model_mitigated, None,
+                 html.H4("\n \n "),
+                 None],
+                width=[None, width2, graph_width, None, width2, graph_width],
+                space_width=space_width),
             html.Hr(),
         ], style={'position': 'sticky', "z-index": "999",
                   "width": "100%", 'background': '#FFFFFF', "top": "0%"}),
@@ -75,22 +91,43 @@ def bias_get_app_callbacks(app):
     @app.callback(
         [Output(GRAPH_AMOUNT_HIRED_BIAS, "figure"),
          Output(CM_GRAPH, "figure"), Output(GRAPH_FAIRNESS_NOTIONS_BIAS, "figure"),
-         Output(GRAPH_ACCURACY_BIAS, "figure")],
+         Output(GRAPH_ACCURACY_BIAS, "figure"),
+         Output(GRAPH_AMOUNT_HIRED_BIAS_DATASET, "figure"),
+         Output(GRAPH_FAIRNESS_BIAS_DATASET, "figure"),
+         Output(GRAPH_FAIRNESS_BIAS_MODEL_MITIGATED, "figure"),],
         [Input(DROPDOWN_MODELS_BIAS, "value"), Input(CHECKLIST_SENSITIVE_FEATURE_BIAS, "value")],
         suppress_callback_exceptions=True
     )
     def update(model, sensitive_features):
-        # Base
+        # Bias
         results = load_scenario('Bias', sensitive_features, model)
 
         count_df = add_description_column(descriptive_age(descriptive_df(results['count_qualified_model'])),
                                           sensitive_features)
-        fig_percentage_hired = px.bar(count_df, y='qualified', x='description', color_discrete_sequence=color_sequence)
 
-        fig_percentage_hired.update_layout(yaxis_title="Percentage qualified", autosize=False)
+        count_df_dataset = add_description_column(descriptive_age(descriptive_df(results['count_qualified_dataset'])),
+                                                  sensitive_features)
 
-        fig_fairness = px.bar(results['fairness_notions'], y='Fairness notions',
-                              color_discrete_sequence=color_sequence)
+        fig_percentage_hired_model = px.bar(count_df, y='qualified', x='description',
+                                            error_y='Standard deviation',
+                                            color_discrete_sequence=color_sequence)
+
+        fig_percentage_hired_model.update_layout(yaxis_title="Percentage qualified", autosize=False)
+
+        fig_percentage_hired_dataset = px.bar(count_df_dataset, y='qualified', x='description',
+                                              error_y='Standard deviation',
+                                              color_discrete_sequence=color_sequence)
+        fig_percentage_hired_dataset.update_layout(yaxis_title="Percentage qualified", autosize=False)
+
+        fig_fairness_model = px.bar(results['fairness_notions_model'], y='Mean', error_y='Standard deviation',
+                                    color_discrete_sequence=color_sequence)
+
+        fig_fairness_dataset = px.bar(results['fairness_notions_dataset'], y='Mean', error_y='Standard deviation',
+                                      color_discrete_sequence=color_sequence)
+
+        fig_fairness_model_mitigated = px.bar(results['fairness_notions_model_after_mitigation'], y='Mean',
+                                              error_y='Standard deviation',
+                                      color_discrete_sequence=color_sequence)
 
         fig_cm = px.imshow(results['confusion_matrix'],
                            labels=dict(x="Predicted", y="True"), x=classification_labels,
@@ -100,4 +137,5 @@ def bias_get_app_callbacks(app):
         fig_accuracy = px.bar(results['accuracy'], y="Model accuracy",
                               color_discrete_sequence=color_sequence)
 
-        return [fig_percentage_hired, fig_cm, fig_fairness, fig_accuracy]
+        return [fig_percentage_hired_model, fig_cm, fig_fairness_model, fig_accuracy, fig_percentage_hired_dataset,
+                fig_fairness_dataset, fig_fairness_model_mitigated]

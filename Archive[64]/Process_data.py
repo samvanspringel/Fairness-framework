@@ -6,23 +6,12 @@ import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn import tree
 
-# Mitigation
-from aif360.algorithms.preprocessing import *
-from aif360.algorithms.postprocessing import *
-
 # Gebruikte modellen
 models = [KNeighborsClassifier(n_neighbors=3), tree.DecisionTreeClassifier()]
 
 model_mapping = {
     'Decision tree': tree.DecisionTreeClassifier(),
     'k-Nearest neighbours': KNeighborsClassifier(n_neighbors=3)
-}
-
-mitigation_mapping = {
-    "Pre-processing: Sample Reweighing": hire.sample_reweighing,
-    "Post-processing: Calibrated Equalized Odds": hire.calibrated_equalized_odds,
-    "Post-processing: Reject Option Classification": hire.reject_option_classification,
-    "Post-processing: Equalized Odds Optimization": hire.equalized_odds_optimization
 }
 
 sensitive_feature_mapping = {
@@ -34,7 +23,7 @@ sensitive_feature_mapping = {
 
 SPLIT_PERCENTAGE = 0.1
 N = 20000
-AMOUNT_OF_SEEDS = 100
+AMOUNT_OF_SEEDS = 30
 
 
 def combine_row(row, sensitive_features):
@@ -148,19 +137,20 @@ def pipeline(model, data, sf):
     return results
 
 
-def mitigation_pipeline(full_dataset, dataset, prediction, sf, fitted_model, technique):
+def mitigation_pipeline(technique, dataset, prediction_df, sf, fitted_model):
     results = {}
     sensitive_features = list(map(lambda feature: sensitive_feature_mapping[feature], sf))
 
-    prediction = mitigation_mapping[technique](full_dataset, dataset, prediction, sensitive_features, 'qualified',
-                                               fitted_model)
+    test_data = dataset.iloc[:int(len(dataset) * SPLIT_PERCENTAGE), :]
+    training_data = dataset.iloc[int(len(dataset) * SPLIT_PERCENTAGE):, :]
 
-    model_prediction_before_mitigation = prediction[0]
+    prediction = hire.sample_reweighing(dataset, sensitive_features, 'qualified', fitted_model)  # TODO: added fitted_model
+    simulator_evaluation = prediction[0]
     mitigated_prediction = prediction[1]
 
-    results['original_prediction'] = model_prediction_before_mitigation
-    results['mitigated_prediction'] = mitigated_prediction
-    results['fairness_notions'] = compute_fairness(model_prediction_before_mitigation, mitigated_prediction, sensitive_features,
+    results['simulator_evaluation'] = simulator_evaluation
+    results['model_prediction'] = mitigated_prediction
+    results['fairness_notions'] = compute_fairness(simulator_evaluation, mitigated_prediction, sensitive_features,
                                                    'qualified')
 
     results['count_qualified_model'] = hire.count_hired(mitigated_prediction, sensitive_features)
@@ -185,7 +175,7 @@ def combine_confusion_matrices(confusion_matrices):
                 cm[i][j] = cm[i][j] + confusion_matrices[c][i][j]
     for i in range(2):
         for j in range(2):
-            cm[i][j] = cm[i][j] / AMOUNT_OF_SEEDS
+            cm[i][j] = cm[i][j]/AMOUNT_OF_SEEDS
     return cm
 
 
@@ -195,26 +185,17 @@ def load_scenario(scenario, sf, model):
 
     fairness = {"Fairness notions": [0, 0, 0, 0]}
 
-    fairnesses_model = pandas.DataFrame(data=fairness, index=['Statistical parity', 'Predictive equality',
-                                                              'Equal opportunity', 'Inconsistency'])
-
-    fairnesses_dataset = pandas.DataFrame(data=fairness, index=['Statistical parity', 'Predictive equality',
-                                                                'Equal opportunity', 'Inconsistency'])
-
-    fairnesses_mitigation = pandas.DataFrame(data=fairness, index=['Statistical parity', 'Predictive equality',
-                                                                   'Equal opportunity', 'Inconsistency'])
-
+    fairness_df = pandas.DataFrame(data=fairness, index=['Statistical parity', 'Predictive equality',
+                                                         'Equal opportunity', 'Inconsistency'])
     accuracy = 0
 
-    counts_model = pandas.DataFrame()
-    counts_dataset = pandas.DataFrame()
-
+    count_dataframes = []
     confusion_matrices = []
 
     for i in range(0, AMOUNT_OF_SEEDS):
         print(f"Processing for seed {i}")
         environment = hire.setup_environment(scenario, sensitive_features, i)
-        candidates = environment.create_dataset(N, show_goodness=True, rounding=5)
+        candidates = environment.create_dataset(10000, show_goodness=True, rounding=5)
 
         data = hire.rename_goodness(candidates)
         data = map_age(data)
@@ -227,102 +208,32 @@ def load_scenario(scenario, sf, model):
         simulator_evaluation = prediction[0]
         model_prediction = prediction[1]
 
-        # Model prediction
         fairness_notions_seed = compute_fairness(simulator_evaluation, model_prediction,
                                                  sensitive_features, 'qualified')
-        fairnesses_model[f'Fairness notions_{i}'] = fairness_notions_seed['Fairness notions']
 
-        if i == 0:
-            counts_model = hire.count_hired(model_prediction, sensitive_features)
-        else:
-            counts_model[f'Counts_{i}'] = hire.count_hired(model_prediction, sensitive_features)['qualified']
+        fairness_df['Fairness notions'] = fairness_df['Fairness notions'] + fairness_notions_seed['Fairness notions']
 
+        count_df = hire.count_hired(model_prediction, sensitive_features)
         cm_accuracy = hire.generate_cm(simulator_evaluation, model_prediction)
 
         confusion_matrices.append(cm_accuracy[0])
 
         accuracy += cm_accuracy[1]
 
-        # Dataset
-        fairness_dataset = compute_fairness(simulator_evaluation, simulator_evaluation,
-                                            sensitive_features, 'qualified')
+        count_dataframes.append(count_df)
 
-        fairnesses_dataset[f'Fairness notions_{i}'] = fairness_dataset['Fairness notions']
-
-        if i == 0:
-            counts_dataset = hire.count_hired(model_prediction, sensitive_features)
-        else:
-            counts_dataset[f'Counts_{i}'] = hire.count_hired(model_prediction, sensitive_features)['qualified']
-
-        mitigated_prediction = hire.reject_option_classification(None, simulator_evaluation, model_prediction, sensitive_features,
-                                                    'qualified', None)
-
-        model_before_mitigation = mitigated_prediction[0]
-        model_after_mitigation = mitigated_prediction[1]
-
-        fairness_mitigation = compute_fairness(model_after_mitigation, model_after_mitigation,
-                                               sensitive_features, 'qualified')
-
-        fairnesses_mitigation[f'Fairness notions_mitigation{i}'] = fairness_mitigation['Fairness notions']
-
-    fairnesses_mitigation = fairnesses_mitigation.drop(['Fairness notions'], axis=1)
-    fm_mitigation_copy_statistics = fairnesses_mitigation.copy()
-    fairnesses_mitigation['Mean'] = fm_mitigation_copy_statistics.mean(axis=1)
-    fairnesses_mitigation['Standard deviation'] = fm_mitigation_copy_statistics.std(axis=1, numeric_only=True)
-    results['fairness_notions_model_after_mitigation'] = fairnesses_mitigation
-
-    # Model prediction
+    count = combine_count_df(count_dataframes)
 
     confusion_matrix = combine_confusion_matrices(confusion_matrices)
 
-    fairnesses_model = fairnesses_model.drop(['Fairness notions'], axis=1)
-    fm_copy_statistics = fairnesses_model.copy()
-    fairnesses_model['Mean'] = fm_copy_statistics.mean(axis=1)
-    fairnesses_model['Standard deviation'] = fm_copy_statistics.std(axis=1, numeric_only=True)
-    results['fairness_notions_model'] = fairnesses_model
+    fairness_df['Fairness notions'] = fairness_df['Fairness notions'] / AMOUNT_OF_SEEDS
+
+    results['fairness_notions'] = fairness_df
 
     results['accuracy'] = accuracy / AMOUNT_OF_SEEDS
 
-    average_df_model = counts_model.copy()
-    for sf in sensitive_features:
-        average_df_model = average_df_model.drop([sf], axis=1)
-    df_model_statistics_copy = average_df_model.copy()
-    average_df_model['qualified'] = df_model_statistics_copy.mean(axis=1)
-    average_df_model['Standard deviation'] = df_model_statistics_copy.std(axis=1, numeric_only=True)
-
-    counts_model['qualified'] = average_df_model['qualified']
-    counts_model['Standard deviation'] = average_df_model['Standard deviation']
-
-    for c in counts_model.columns:
-        if not (c in sensitive_features or c == 'qualified' or c == 'Standard deviation'):
-            counts_model = counts_model.drop(c, axis=1)
-
-    results['count_qualified_model'] = counts_model
+    results['count_qualified_model'] = count
 
     results['confusion_matrix'] = confusion_matrix
-
-    # Dataset
-
-    fairnesses_dataset = fairnesses_dataset.drop(['Fairness notions'], axis=1)
-    fd_copy_statistics = fairnesses_dataset.copy()
-    fairnesses_dataset['Mean'] = fd_copy_statistics.mean(axis=1)
-    fairnesses_dataset['Standard deviation'] = fd_copy_statistics.std(axis=1, numeric_only=True)
-    results['fairness_notions_dataset'] = fairnesses_dataset
-
-    average_df_dataset = counts_dataset.copy()
-    for sf in sensitive_features:
-        average_df_dataset.drop([sf], axis=1)
-    df_dataset_statistics_copy = average_df_dataset.copy()
-    average_df_dataset['qualified'] = df_dataset_statistics_copy.mean(axis=1)
-    average_df_dataset['Standard deviation'] = df_dataset_statistics_copy.std(axis=1, numeric_only=True)
-
-    counts_dataset['qualified'] = average_df_dataset['qualified']
-    counts_dataset['Standard deviation'] = average_df_dataset['Standard deviation']
-
-    for c in counts_dataset.columns:
-        if not (c in sensitive_features or c == 'qualified' or c == 'Standard deviation'):
-            counts_dataset = counts_dataset.drop(c, axis=1)
-
-    results['count_qualified_dataset'] = counts_dataset
 
     return results

@@ -40,5 +40,5 @@ if __name__ == '__main__':
 
     samples = hiring_ml.rename_goodness(env.create_dataset(num_samples, show_goodness=True, rounding=5))
 
-    samples.to_csv(f"datasets/base_more_men{seed}.csv")
+    samples.to_csv(f"datasets/bias_gender_nationality_married_age.csv", index=False)
     #samples.to_csv(f"datasets/base_gender_age_nationality_married.csv")
