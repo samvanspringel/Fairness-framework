@@ -84,6 +84,12 @@ def change_types(data):
 
 
 def calculate_fairness(simulator_df, prediction_df, sensitive_attributes, output):
+    a = isolate_features(simulator_df)
+    b = isolate_features(prediction_df)
+
+    c = a.reset_index(drop=True) == b.reset_index(drop=True)
+    print(c)
+
     dataset = StandardDataset(df=prediction_df,
                               label_name=output,
                               favorable_classes=[1],
@@ -112,6 +118,7 @@ def calculate_fairness(simulator_df, prediction_df, sensitive_attributes, output
 
     fairness_df = pd.DataFrame(data=fairness, index=['Statistical parity', 'Predictive equality', 'Equal opportunity',
                                                      'Inconsistency'])
+
     return fairness_df
 
 
@@ -120,7 +127,7 @@ def sample_reweighing(df, test_set, prediction_model, sensitive_features, output
                                     label_name=output,
                                     favorable_classes=[1],
                                     protected_attribute_names=sensitive_features,
-                                    privileged_classes=[[0] for a in sensitive_features])
+                                    privileged_classes=[[0.0] for a in sensitive_features])
 
     privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]
                           for i, a in enumerate(dataset_model.protected_attribute_names)}]
@@ -178,37 +185,45 @@ def calibrated_equalized_odds(full_dataset, df, prediction, sensitive_features, 
 
     ceo.fit(dataset_true=dataset, dataset_pred=pred)
 
-    prediction_ceo = ceo.predict(dataset=pred).convert_to_dataframe()
+    prediction_ceo = ceo.predict(dataset=pred).convert_to_dataframe()[0]
 
-    return prediction, prediction_ceo[0]
+    predict_df = isolate_features(df)
+    predict_df[output] = prediction_ceo[output]
+
+    return prediction, predict_df, df
 
 
 def reject_option_classification(full_dataset, df, prediction, sensitive_features, output, model):
-    dataset_model = StandardDataset(df=df,
-                                    label_name=output,
-                                    favorable_classes=[1],
-                                    protected_attribute_names=sensitive_features,
-                                    privileged_classes=[[0] for a in sensitive_features])
+    dataset = StandardDataset(df=df,
+                              label_name=output,
+                              favorable_classes=[1],
+                              protected_attribute_names=sensitive_features,
+                              privileged_classes=[[0]])
 
-    prediction_model = StandardDataset(df=prediction,
-                                       label_name=output,
-                                       favorable_classes=[1],
-                                       protected_attribute_names=sensitive_features,
-                                       privileged_classes=[[0] for a in sensitive_features])
+    pred = StandardDataset(df=prediction,
+                           label_name=output,
+                           favorable_classes=[1],
+                           protected_attribute_names=sensitive_features,
+                           privileged_classes=[[0]])
 
-    privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]
-                          for i, a in enumerate(dataset_model.protected_attribute_names)}]
-    unprivileged_groups = [{a: dataset_model.unprivileged_protected_attributes[i]
-                            for i, a in enumerate(dataset_model.protected_attribute_names)}]
+    a = sensitive_features[0]
+    i = pred.protected_attribute_names.index(a)
+    privileged_groups = [{a: pred.privileged_protected_attributes[i]}]
+    unprivileged_groups = [{a: pred.unprivileged_protected_attributes[i]}]
 
-    roc = RejectOptionClassification(privileged_groups=privileged_groups, unprivileged_groups=unprivileged_groups,
+    roc = RejectOptionClassification(privileged_groups=privileged_groups,
+                                     unprivileged_groups=unprivileged_groups,
                                      metric_name="Equal opportunity difference")
 
-    roc.fit(dataset_true=dataset_model, dataset_pred=prediction_model)
+    roc.fit(dataset_true=dataset, dataset_pred=pred)
 
-    prediction_roc = roc.predict(dataset=prediction_model).convert_to_dataframe()
+    prediction_roc = roc.predict(dataset=pred).convert_to_dataframe()[0]
 
-    return prediction, prediction_roc[0]
+    predict_df = isolate_features(df)
+    copy = prediction_roc.copy()
+    predict_df[output] = copy[output].values.tolist()
+
+    return prediction, prediction_roc, dataset.convert_to_dataframe()[0]
 
 
 def equalized_odds_optimization(full_dataset, df, prediction, sensitive_features, output, model):
@@ -216,13 +231,13 @@ def equalized_odds_optimization(full_dataset, df, prediction, sensitive_features
                                     label_name=output,
                                     favorable_classes=[1],
                                     protected_attribute_names=sensitive_features,
-                                    privileged_classes=[[0] for a in sensitive_features])
+                                    privileged_classes=[[0.0] for a in sensitive_features])
 
     prediction_model = StandardDataset(df=prediction,
                                        label_name=output,
                                        favorable_classes=[1],
                                        protected_attribute_names=sensitive_features,
-                                       privileged_classes=[[0] for a in sensitive_features])
+                                       privileged_classes=[[0.0] for a in sensitive_features])
 
     privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]
                           for i, a in enumerate(dataset_model.protected_attribute_names)}]

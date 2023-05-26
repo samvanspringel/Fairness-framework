@@ -3,6 +3,7 @@ from dash.dependencies import Input, Output
 from Tabs import horizontal_div
 import plotly.express as px
 from Process_data import *
+
 color_sequence = px.colors.qualitative.Safe
 
 PREVIEW_BIAS = "Preview_data_BIAS"
@@ -17,23 +18,26 @@ CM_GRAPH = "Confusion_matrix_BIAS"
 SCENARIO = "Scenario"
 classification_labels = ["Not qualified", "Qualified"]
 
-GRAPH_AMOUNT_HIRED_BIAS = "Amount_hired_gender_BIAS"
-GRAPH_FAIRNESS_NOTIONS_BIAS = "Graph_fairness_notions_BIAS"
+GRAPH_AMOUNT_HIRED_BIAS_MODEL = "Amount_hired_gender_BIAS"
+GRAPH_FAIRNESS_NOTIONS_BIAS_MODEL = "Graph_fairness_notions_BIAS"
 GRAPH_ACCURACY_BIAS = "Graph_accuracy_BIAS"
 
 GRAPH_AMOUNT_HIRED_BIAS_DATASET = "Graph fairness notions_BIAS_DATASET"
 GRAPH_FAIRNESS_BIAS_DATASET = "Graph_fairness_BIAS_DATASET"
 GRAPH_FAIRNESS_BIAS_MODEL_MITIGATED = "Graph_fairness_BIAS_MODEL_MITIGATED"
+GRAPH_AMOUNT_HIRED_BIAS_MITIGATED = "Graph fairness notions_BIAS_MITIGATED"
+
 
 def bias_get_tab_dcc():
     checklist_sensitive_features = dcc.Checklist(id=CHECKLIST_SENSITIVE_FEATURE_BIAS, options=sf_options,
                                                  value=[sf_options[0]], inline=True, style={'display': 'block'})
     dropdown_models = dcc.Dropdown(id=DROPDOWN_MODELS_BIAS, options=models_options, value=models_options[1],
                                    clearable=False)
-    hired_graph_model = dcc.Graph(id=GRAPH_AMOUNT_HIRED_BIAS)
+    hired_graph_model = dcc.Graph(id=GRAPH_AMOUNT_HIRED_BIAS_MODEL)
     hired_graph_dataset = dcc.Graph(id=GRAPH_AMOUNT_HIRED_BIAS_DATASET)
+    hired_graph_mitigated = dcc.Graph(id=GRAPH_AMOUNT_HIRED_BIAS_MITIGATED)
     cm = dcc.Graph(id=CM_GRAPH)
-    fairness_graph_model = dcc.Graph(id=GRAPH_FAIRNESS_NOTIONS_BIAS)
+    fairness_graph_model = dcc.Graph(id=GRAPH_FAIRNESS_NOTIONS_BIAS_MODEL)
     fairness_graph_dataset = dcc.Graph(id=GRAPH_FAIRNESS_BIAS_DATASET)
     fairness_graph_model_mitigated = dcc.Graph(id=GRAPH_FAIRNESS_BIAS_MODEL_MITIGATED)
     accuracy = dcc.Graph(id=GRAPH_ACCURACY_BIAS)
@@ -70,10 +74,11 @@ def bias_get_tab_dcc():
                  fairness_graph_model],
                 width=[None, width2, graph_width, None, width2, graph_width],
                 space_width=space_width),
+            html.H2("Mitigated"),
             horizontal_div(
-                [None, html.H4("\n \n  Mitigated prediction"), fairness_graph_model_mitigated, None,
-                 html.H4("\n \n "),
-                 None],
+                [None, html.H4("\n \n  Fairness mitigated"), fairness_graph_model_mitigated, None,
+                 html.H4("\n \n  Proportions mitigated"),
+                 hired_graph_mitigated],
                 width=[None, width2, graph_width, None, width2, graph_width],
                 space_width=space_width),
             html.Hr(),
@@ -86,15 +91,16 @@ def bias_get_tab_dcc():
     # Return tab layout
     return layout
 
-
 def bias_get_app_callbacks(app):
     @app.callback(
-        [Output(GRAPH_AMOUNT_HIRED_BIAS, "figure"),
-         Output(CM_GRAPH, "figure"), Output(GRAPH_FAIRNESS_NOTIONS_BIAS, "figure"),
+        [Output(GRAPH_AMOUNT_HIRED_BIAS_MODEL, "figure"),
+         Output(CM_GRAPH, "figure"),
+         Output(GRAPH_FAIRNESS_NOTIONS_BIAS_MODEL, "figure"),
          Output(GRAPH_ACCURACY_BIAS, "figure"),
          Output(GRAPH_AMOUNT_HIRED_BIAS_DATASET, "figure"),
          Output(GRAPH_FAIRNESS_BIAS_DATASET, "figure"),
-         Output(GRAPH_FAIRNESS_BIAS_MODEL_MITIGATED, "figure"),],
+         Output(GRAPH_FAIRNESS_BIAS_MODEL_MITIGATED, "figure"),
+         Output(GRAPH_AMOUNT_HIRED_BIAS_MITIGATED, "figure")],
         [Input(DROPDOWN_MODELS_BIAS, "value"), Input(CHECKLIST_SENSITIVE_FEATURE_BIAS, "value")],
         suppress_callback_exceptions=True
     )
@@ -108,6 +114,10 @@ def bias_get_app_callbacks(app):
         count_df_dataset = add_description_column(descriptive_age(descriptive_df(results['count_qualified_dataset'])),
                                                   sensitive_features)
 
+        count_df_mitigated = add_description_column(
+            descriptive_age(descriptive_df(results['count_qualified_mitigated'])),
+            sensitive_features)
+
         fig_percentage_hired_model = px.bar(count_df, y='qualified', x='description',
                                             error_y='Standard deviation',
                                             color_discrete_sequence=color_sequence)
@@ -119,6 +129,11 @@ def bias_get_app_callbacks(app):
                                               color_discrete_sequence=color_sequence)
         fig_percentage_hired_dataset.update_layout(yaxis_title="Percentage qualified", autosize=False)
 
+        fig_percentage_hired_mitigated = px.bar(count_df_mitigated, y='qualified', x='description',
+                                                error_y='Standard deviation',
+                                                color_discrete_sequence=color_sequence)
+        fig_percentage_hired_mitigated.update_layout(yaxis_title="Percentage qualified", autosize=False)
+
         fig_fairness_model = px.bar(results['fairness_notions_model'], y='Mean', error_y='Standard deviation',
                                     color_discrete_sequence=color_sequence)
 
@@ -127,7 +142,7 @@ def bias_get_app_callbacks(app):
 
         fig_fairness_model_mitigated = px.bar(results['fairness_notions_model_after_mitigation'], y='Mean',
                                               error_y='Standard deviation',
-                                      color_discrete_sequence=color_sequence)
+                                              color_discrete_sequence=color_sequence)
 
         fig_cm = px.imshow(results['confusion_matrix'],
                            labels=dict(x="Predicted", y="True"), x=classification_labels,
@@ -138,4 +153,4 @@ def bias_get_app_callbacks(app):
                               color_discrete_sequence=color_sequence)
 
         return [fig_percentage_hired_model, fig_cm, fig_fairness_model, fig_accuracy, fig_percentage_hired_dataset,
-                fig_fairness_dataset, fig_fairness_model_mitigated]
+                fig_fairness_dataset, fig_fairness_model_mitigated, fig_percentage_hired_mitigated]

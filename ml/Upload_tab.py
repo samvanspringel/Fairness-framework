@@ -139,11 +139,11 @@ def step_upload():
                               ' potential bias in your dataset. We will train a machine learning algorithm that will '
                               'apply the patterns that it found in your own dataset.'
                               ' Subsequently, we will test this prediction for fairness. Depending on which sensitive'
-                              ' features you choose, we construct all different groups with all possible for these '
+                              ' features you choose, we construct all different groups with all possible for these. '
                               'Next, you will be able to choose which mitigation technique to use for your prediction.'
                               ' Again depending on which one you choose, the original dataset or the '
                               'models prediction is changed. '
-                              'In the next step you will be shown how well the mitigation'
+                              'In the next step you will be shown how well the mitigation '
                               'worked. Depending on the technique, the fairness notion that is focussed on should be'
                               ' brought down to zero. '),
                        html.P('Upload your dataset now to see for yourself! '),
@@ -168,7 +168,9 @@ def step_preview_select():
             dash_table.DataTable(id=PREVIEW_HOME, data=preview),
             html.Br(),
             html.H3(f"Which sensitive features?"),
-            html.P('Here you can make your choice of which sensitive features to focus on. All possible combinations '
+            html.P('Sensitive features are characteristics that should not influence a decision, but are '
+                   'known to have an impact on whether candidates are considered qualified. '
+                   'Here you can make your choice of which sensitive features to focus on. All possible combinations '
                    'of groups of candidates with these sensitive features are checked out.'),
             checklist_sensitive_features,
             html.Br(),
@@ -213,8 +215,8 @@ def step_results_model():
             html.P(f"When machine learning algorithms learn, they try to optimise their performance on the training "
                    f"set. This means that the test set is unknown territory for the model. When a new instance has "
                    f"no comparable one in the training set, the algorithm may not be able to correctly classify it, "
-                   f"resulting in incorrect  predictions. Assuming we know the true outcome of the testing samples (your"
-                   f"dataset) "
+                   f"resulting in incorrect  predictions. Assuming we know the true outcome of the testing samples "
+                   f"(your dataset) "
                    f"and every applicant has a positive or a  negative prediction, we can illustrate the mistakes "
                    f"the model made with "
                    f"a confusion matrix. In our job hiring scenario a positive outcome represents that the applicant "
@@ -249,7 +251,7 @@ def step_results_model():
                    'a look at the amount of candidates that the model evaluated differently compared to your dataset.'
                    ' On the right there is a bar graph that tells you the accuracy of the model. You would want this '
                    'as close as possible to 100%. This way you can fully see the amount of bias the model is influenced'
-                   'by using your dataset as training ground.'),
+                   ' by using your dataset as training ground.'),
             html.Br(),
             horizontal_div([None,
                             None,
@@ -313,10 +315,10 @@ def step_results_fairness():
             html.Br(),
             html.H3(f"Fairness notions"),
             html.P('Below you will find certain fairness notions that illustrate the amount of '
-                   'bias the model was influenced by. Each fairness notion focusses on a different aspect of the data. '
+                   'bias the model was influenced by. Each fairness notion focuses on a different aspect of the data. '
                    'If you find that these values are too high, you will find '
                    'certain methods to try and mitigate this bias. Ultimately, you would want these values as close'
-                   'as possible to zero.'),
+                   ' as possible to zero.'),
 
             html.H4(f"Group fairness notions"),
             html.Li("Statistical parity: When the statistical parity of two groups is equal, it means that both "
@@ -417,7 +419,7 @@ def step_choose_mitigation():
 def step_results_mitigation():
     global results, results_mitigation, sensitive_features
 
-    fig_sunburst_before = px.sunburst(descriptive_columns(results_mitigation['original_prediction']),
+    fig_sunburst_before = px.sunburst(descriptive_columns(results['model_prediction']),
                                       color_discrete_sequence=color_sequence,
                                       path=list(
                                           map(lambda feature: sensitive_feature_mapping[feature], sensitive_features)),
@@ -436,7 +438,7 @@ def step_results_mitigation():
                                              sensitive_features)
 
     count_df_after = add_description_column(
-        descriptive_age(descriptive_df(results_mitigation['count_qualified_model'])),
+        descriptive_age(descriptive_df(results_mitigation['count_qualified_mitigated'])),
         sensitive_features)
 
     fig_percentage_hired_before = px.bar(count_df_before, y='qualified', x='description',
