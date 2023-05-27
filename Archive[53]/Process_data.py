@@ -33,8 +33,8 @@ sensitive_feature_mapping = {
 }
 
 SPLIT_PERCENTAGE = 0.1
-N = 20000
-AMOUNT_OF_SEEDS = 20
+N = 5000
+AMOUNT_OF_SEEDS = 1
 
 
 def combine_row(row, sensitive_features):
@@ -157,14 +157,10 @@ def mitigation_pipeline(full_dataset, dataset, prediction, sf, fitted_model, tec
 
     model_prediction = mitigation[0]
     mitigated_prediction = mitigation[1]
-
-    print("Men", len(mitigated_prediction[(mitigated_prediction["gender"] == 0) &
-                  (mitigated_prediction["qualified"] == 1)]))
-    print("Women", len(mitigated_prediction[(mitigated_prediction["gender"] == 1) &
-                                 (mitigated_prediction["qualified"] == 1)]))
+    # dataset = mitigation[2]
 
     results['original_prediction'] = model_prediction
-    results['mitigated_prediction'] = mitigated_prediction
+    results['mitigated_prediction'] = mitigation[1]
     results['fairness_notions'] = compute_fairness(dataset, mitigated_prediction,
                                                    sensitive_features, 'qualified')
 
@@ -262,11 +258,14 @@ def load_scenario(scenario, sf, model):
 
 
         mitigation = hire.reject_option_classification(data, simulator_evaluation, model_prediction,
-                                                    sensitive_features, 'qualified', trained_model)
+                                                                  sensitive_features,
+                                                                  'qualified', trained_model)
+        model_prediction = mitigation[0]
         mitigated_prediction = mitigation[1]
+        dataset = mitigation[2]
 
-        fairness_mitigation = compute_fairness(test_data, mitigated_prediction,
-                                               sensitive_features, 'qualified')
+        fairness_mitigation = compute_fairness(simulator_evaluation, mitigated_prediction,
+                                                sensitive_features, 'qualified')
 
         fairnesses_mitigation[f'Fairness notions_mitigation{i}'] = fairness_mitigation['Fairness notions']
 

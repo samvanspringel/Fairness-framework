@@ -3,12 +3,11 @@ import random
 import aif360.sklearn.metrics
 import numpy as np
 import pandas
-from aif360.sklearn.postprocessing import CalibratedEqualizedOdds, PostProcessingMeta
-from aif360.sklearn.preprocessing import ReweighingMeta
 
 from sklearn.model_selection import cross_val_score, KFold
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
+from sklearn import tree
 
 # AIF360
 from aif360.algorithms.preprocessing import *
@@ -85,6 +84,12 @@ def change_types(data):
 
 
 def calculate_fairness(simulator_df, prediction_df, sensitive_attributes, output):
+    a = isolate_features(simulator_df)
+    b = isolate_features(prediction_df)
+
+    c = a.reset_index(drop=True) == b.reset_index(drop=True)
+    print(c)
+
     dataset = StandardDataset(df=prediction_df,
                               label_name=output,
                               favorable_classes=[1],
@@ -113,15 +118,16 @@ def calculate_fairness(simulator_df, prediction_df, sensitive_attributes, output
 
     fairness_df = pd.DataFrame(data=fairness, index=['Statistical parity', 'Predictive equality', 'Equal opportunity',
                                                      'Inconsistency'])
+
     return fairness_df
 
 
-def sample_reweighing(df, sensitive_features, output, model):
+def sample_reweighing(df, test_set, prediction_model, sensitive_features, output, model):
     dataset_model = StandardDataset(df=df,
                                     label_name=output,
                                     favorable_classes=[1],
                                     protected_attribute_names=sensitive_features,
-                                    privileged_classes=[[0] for a in sensitive_features])
+                                    privileged_classes=[[0.0] for a in sensitive_features])
 
     privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]
                           for i, a in enumerate(dataset_model.protected_attribute_names)}]
@@ -130,20 +136,8 @@ def sample_reweighing(df, sensitive_features, output, model):
 
     reweighing = Reweighing(unprivileged_groups=unprivileged_groups, privileged_groups=privileged_groups)
     reweighing.fit(dataset=dataset_model)
-    # print(reweighing.transform(dataset_model))
-
     reweigh_dataset = reweighing.transform(dataset_model)
-    print("reweigh_dataset")
-    print(reweigh_dataset)
-
     reweigh_df, new_dict = reweigh_dataset.convert_to_dataframe()
-    # reweigh_df.drop(columns=['Unnamed: 0'], inplace=True)
-    print("reweigh_df")
-    print(reweigh_df.columns)
-    print(df.columns)
-    # print(reweigh_df)
-    # print("dict")
-    # print(new_dict)
 
     # TODO: check je of dit een nieuw model van hetzelfde type als model traint of het model zelf her-traint?
     #  Ik denk dat het een nieuw is, wat hetgene is dat we willen in dit geval
@@ -161,30 +155,125 @@ def sample_reweighing(df, sensitive_features, output, model):
         new_model = model.fit(isolate_features(knn_df), isolate_prediction(knn_df))
     # TODO: voor de dataset geval als je model, wat doe je dan?
 
-    prediction = new_model.predict(isolate_features(df))
-    predict_df = df.copy()
+    prediction = new_model.predict(isolate_features(test_set))
+    predict_df = test_set.copy()
     predict_df[output] = prediction
 
-    print(df.head(10))
-    print(predict_df.head(10))
-
-    print(sum(df[output] != predict_df[output]), "differences in prediction")
-
-    return df, predict_df
+    return prediction_model, predict_df
 
 
-def calibrated_equalized_odds(training_data, test_data, fitted_model, sensitive_features):
-    print(sensitive_features)
-    ceo = CalibratedEqualizedOdds(prot_attr=sensitive_features, cost_constraint='fpr')
+def calibrated_equalized_odds(full_dataset, df, prediction, sensitive_features, output, model):
+    dataset = StandardDataset(df=df,
+                              label_name=output,
+                              favorable_classes=[1],
+                              protected_attribute_names=sensitive_features,
+                              # privileged_classes=[[0]]
+                              # TODO:
+                              privileged_classes=[[0.0] for a in sensitive_features]
+                              )
 
-    post_processor = PostProcessingMeta(estimator=fitted_model, postprocessor=ceo, prefit=True, val_size=18000)
+    pred = StandardDataset(df=prediction,
+                           label_name=output,
+                           favorable_classes=[1],
+                           protected_attribute_names=sensitive_features,
+                           # privileged_classes=[[0]]
+                           # TODO:
+                           privileged_classes=[[0.0] for a in sensitive_features]
+                           )
 
-    training_x = isolate_features(training_data)
-    training_y = isolate_prediction(training_data)
+    # TODO: waarom niet alle sensitive features gelijk sample reweighing?
+    privileged_groups = [{a: dataset.privileged_protected_attributes[i]
+                          for i, a in enumerate(dataset.protected_attribute_names)}]
+    unprivileged_groups = [{a: dataset.unprivileged_protected_attributes[i]
+                            for i, a in enumerate(dataset.protected_attribute_names)}]
 
-    post_processor.fit(training_x, training_y)
+    ceo = CalibratedEqOddsPostprocessing(privileged_groups=privileged_groups,
+                                         unprivileged_groups=unprivileged_groups, cost_constraint='fpr')
 
-    return make_prediction(test_data, post_processor)
+    ceo.fit(dataset_true=dataset, dataset_pred=pred)
+
+    prediction_ceo = ceo.predict(dataset=pred).convert_to_dataframe()[0]
+
+    # TODO: ik denk dat dit het probleem is, dat je output niet ints zijn gelijk de dataset waarmee je vergelijkt
+    prediction_ceo[output] = prediction_ceo[output].astype('int64')
+    # TODO
+    return prediction, prediction_ceo
+    # return prediction, predict_df, df
+
+
+def reject_option_classification(full_dataset, df, prediction, sensitive_features, output, model):
+    dataset = StandardDataset(df=df,
+                              label_name=output,
+                              favorable_classes=[1],
+                              protected_attribute_names=sensitive_features,
+                              # privileged_classes=[[0]]
+                              # TODO:
+                              privileged_classes=[[0.0] for a in sensitive_features]
+                              )
+
+    pred = StandardDataset(df=prediction,
+                           label_name=output,
+                           favorable_classes=[1],
+                           protected_attribute_names=sensitive_features,
+                           # privileged_classes=[[0]]
+                           # TODO:
+                           privileged_classes=[[0.0] for a in sensitive_features]
+                           )
+
+    # TODO: waarom niet alle sensitive features gelijk sample reweighing?
+    privileged_groups = [{a: dataset.privileged_protected_attributes[i]
+                          for i, a in enumerate(dataset.protected_attribute_names)}]
+    unprivileged_groups = [{a: dataset.unprivileged_protected_attributes[i]
+                            for i, a in enumerate(dataset.protected_attribute_names)}]
+
+    roc = RejectOptionClassification(privileged_groups=privileged_groups,
+                                     unprivileged_groups=unprivileged_groups,
+                                     metric_name="Equal opportunity difference")
+
+    roc.fit(dataset_true=dataset, dataset_pred=pred)
+
+    prediction_roc = roc.predict(dataset=pred).convert_to_dataframe()[0]
+
+    # TODO
+    prediction_roc[output] = prediction_roc[output].astype('int64')
+    prediction_roc = prediction_roc.reset_index(drop=True)
+    # predict_df = isolate_features(df)
+    # copy = prediction_roc.copy()
+    # predict_df[output] = copy[output].values.tolist()
+
+    print(prediction_roc.equals(df))
+    print(prediction_roc.equals(prediction))
+
+    # TODO:
+    return prediction, prediction_roc
+    # return prediction, prediction_roc, dataset.convert_to_dataframe()[0]
+
+
+def equalized_odds_optimization(full_dataset, df, prediction, sensitive_features, output, model):
+    dataset_model = StandardDataset(df=df,
+                                    label_name=output,
+                                    favorable_classes=[1],
+                                    protected_attribute_names=sensitive_features,
+                                    privileged_classes=[[0.0] for a in sensitive_features])
+
+    prediction_model = StandardDataset(df=prediction,
+                                       label_name=output,
+                                       favorable_classes=[1],
+                                       protected_attribute_names=sensitive_features,
+                                       privileged_classes=[[0.0] for a in sensitive_features])
+
+    privileged_groups = [{a: dataset_model.privileged_protected_attributes[i]
+                          for i, a in enumerate(dataset_model.protected_attribute_names)}]
+    unprivileged_groups = [{a: dataset_model.unprivileged_protected_attributes[i]
+                            for i, a in enumerate(dataset_model.protected_attribute_names)}]
+
+    eq_pp = EqOddsPostprocessing(privileged_groups=privileged_groups, unprivileged_groups=unprivileged_groups)
+
+    eq_pp.fit(dataset_true=dataset_model, dataset_pred=prediction_model)
+
+    prediction_roc = eq_pp.predict(dataset=prediction_model).convert_to_dataframe()
+
+    return prediction, prediction_roc[0]
 
 
 def generate_cm(dataset, prediction):
