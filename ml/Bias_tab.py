@@ -4,7 +4,8 @@ from Tabs import horizontal_div
 import plotly.express as px
 from Process_data import *
 
-color_sequence = px.colors.qualitative.Safe
+color_sequence = [px.colors.qualitative.Set3[4], px.colors.qualitative.Set3[3],
+                  px.colors.qualitative.Set2[4], px.colors.qualitative.Set3[11]]
 
 PREVIEW_BIAS = "Preview_data_BIAS"
 
@@ -119,28 +120,34 @@ def bias_get_app_callbacks(app):
             sensitive_features)
 
         fig_percentage_hired_model = px.bar(count_df, y='qualified', x='description',
+                                            color='description',
                                             error_y='Standard deviation',
                                             color_discrete_sequence=color_sequence)
 
         fig_percentage_hired_model.update_layout(yaxis_title="Percentage qualified", autosize=False)
 
         fig_percentage_hired_dataset = px.bar(count_df_dataset, y='qualified', x='description',
+                                              color='description',
                                               error_y='Standard deviation',
                                               color_discrete_sequence=color_sequence)
         fig_percentage_hired_dataset.update_layout(yaxis_title="Percentage qualified", autosize=False)
 
         fig_percentage_hired_mitigated = px.bar(count_df_mitigated, y='qualified', x='description',
+                                                color='description',
                                                 error_y='Standard deviation',
                                                 color_discrete_sequence=color_sequence)
         fig_percentage_hired_mitigated.update_layout(yaxis_title="Percentage qualified", autosize=False)
 
         fig_fairness_model = px.bar(results['fairness_notions_model'], y='Mean', error_y='Standard deviation',
+                                    color=results['fairness_notions_dataset'].index,
                                     color_discrete_sequence=color_sequence)
 
         fig_fairness_dataset = px.bar(results['fairness_notions_dataset'], y='Mean', error_y='Standard deviation',
+                                      color=results['fairness_notions_dataset'].index,
                                       color_discrete_sequence=color_sequence)
 
         fig_fairness_model_mitigated = px.bar(results['fairness_notions_model_after_mitigation'], y='Mean',
+                                              color=results['fairness_notions_dataset'].index,
                                               error_y='Standard deviation',
                                               color_discrete_sequence=color_sequence)
 

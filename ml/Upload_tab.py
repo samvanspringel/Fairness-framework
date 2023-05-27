@@ -15,9 +15,6 @@ from dash.exceptions import PreventUpdate
 import base64
 import io
 
-# TODO: ik stel voor dat je ofwel met de tabs werkt, ofwel zonder en op een andere manier de layout telkens verandert.
-#  Hier heb je eigelijk de twee door elkaar gedaan. Ik zou aanraden om het met eventueel op de manier hieronder te doen
-#  en je tabs behouden voor de start van de upload en je experimenten.
 
 STEPS_SLIDER = "Steps"
 
@@ -25,25 +22,24 @@ data_uploaded = False
 uploaded_dataset = None
 model = None
 sensitive_features = None
-color_sequence = px.colors.qualitative.Safe
+color_sequence = [px.colors.qualitative.Set3[4], px.colors.qualitative.Set3[3],
+                  px.colors.qualitative.Set2[4], px.colors.qualitative.Set3[11]]
 
 steps = {
     0: "Upload",
     1: "Setup",
-    2: "Train model",  # TODO: added
+    2: "Train model",
     3: "Fairness",
     4: "Mitigate bias",
     5: "Compare"
 }
 
-# TODO: maak een aparte div aan voor in je tab om gemakkelijk in de huidige tab van layout te veranderen
 UPLOAD_DIV = "upload_div"
 NEXT_BUTTON_UPLOAD = "next_upload"
 NEXT_BUTTON_TRAINING_RESULTS = "next_training_results"
 NEXT_BUTTON_FAIRNESS = "next_fairness"
 NEXT_BUTTON_MITIGATION_CHOICE = "next_mitigation_choice"
 
-# TODO: zet in deze file/tab enkel de elementen en functies die door deze tab gebruikt worden
 PREVIEW_HOME = "Preview_data_UPLOAD"
 
 UPLOADED_DATASET = "uploaded-dataset"
@@ -80,23 +76,19 @@ results_mitigation = {}
 
 
 def upload_get_tab_dcc():
-    # TODO: beginpunt: dit is de eerste functie die opgeroepen wordt bij je tab
     steps_slider_upload = dcc.Slider(id=STEPS_SLIDER, disabled=True,
                                      marks=steps, value=0,
+
                                      min=min(steps.keys()),
-                                     max=max(steps.keys()))  # TODO: dit is blijkbaar nodig om te updaten
-    # TODO: ik denk dat je wel de style moet aanpassen aanezien de slider in het grijs wordt ingevuld
+                                     max=max(steps.keys()))
 
     layout = html.Div([
         ### Header under tab ###
-        html.Div([  # TODO: dit is de volledige layout binnen je tab
+        html.Div([
             html.H1("Highlighting & Mitigating Discrimination in Job Hiring Scenarios"),
             steps_slider_upload,
-            # TODO: zorg dat deze buiten de veranderende layout staat, zodat je heb telkens kan aanpassen
             html.Br(),
             html.Div(
-                # TODO: dit is de layout waarbinnen je een dataset inlaadt, plots aanmaakt, ...
-                #  Deze is degene die we telkens updaten/vervangen later
                 step_upload(),
                 id=UPLOAD_DIV),
         ], style={'position': 'sticky', "z-index": "999",
@@ -278,11 +270,13 @@ def step_results_fairness():
 
     count_df = add_description_column(descriptive_age(descriptive_df(results['count_qualified_model'])),
                                       sensitive_features)
-    fig_percentage_hired = px.bar(count_df, y='qualified', x='description', color_discrete_sequence=color_sequence)
+    fig_percentage_hired = px.bar(count_df, y='qualified', x='description', color_discrete_sequence=color_sequence,
+                                  color='description',)
 
     fig_percentage_hired.update_layout(yaxis_title="Percentage qualified", autosize=False)
 
     fig_fairness = px.bar(results['fairness_notions'], y='Fairness notions',
+                          color=results['fairness_notions'].index,
                           color_discrete_sequence=color_sequence)
 
     fig_sunburst = px.sunburst(descriptive_age(descriptive_columns(results['model_prediction'])),
@@ -302,7 +296,9 @@ def step_results_fairness():
         ### Header under tab ###
         html.Div([
             html.H2(f"Fairness"),
-            html.P('We tested the machine learning model in terms of fairness. Check below to see the results!'),
+            html.P('We tested the machine learning model in terms of fairness. You can view fairness as '
+                   'a way of quantifying how fair the machine learning model treated each candidate.'
+                   ' Check below to see the results!'),
             html.H3(f"Total vs. Proportionally"),
             html.P('Here you can see a sunburst plot that denotes the total amount of candidates that were deemed '
                    'qualified based on their sensitive features. This plot can give you a sense of which applicants '
@@ -325,7 +321,8 @@ def step_results_fairness():
                     "groups have an equal acceptance rate. To satisfy statistical parity, the probability of being "
                     "predicted qualified should be the same for all groups. This fairness notion only looks at the "
                     "prediction of the model. This way it can detect bias in datasets without having to compare it to "
-                    "a prediction. Statistical parity is "
+                    "a prediction. Because it doesn't use a comparison between datasets, it is suitable "
+                    "when the outcomes of the initial dataset are unreliable. Statistical parity is "
                     "computed by this formula:"),
             html.P(style={'text-align': 'center'}, children=f"(TP + FP)/(TP + FP + FN + TN)"),
             html.Br(),
@@ -442,8 +439,10 @@ def step_results_mitigation():
         sensitive_features)
 
     fig_percentage_hired_before = px.bar(count_df_before, y='qualified', x='description',
+                                         color='description',
                                          color_discrete_sequence=color_sequence)
     fig_percentage_hired_after = px.bar(count_df_after, y='qualified', x='description',
+                                        color='description',
                                         color_discrete_sequence=color_sequence)
 
     fig_percentage_hired_before.update_layout(yaxis_title="Percentage qualified", autosize=False)
@@ -453,9 +452,11 @@ def step_results_mitigation():
     hired_graph_after = dcc.Graph(id=GRAPH_AMOUNT_HIRED_AM, figure=fig_percentage_hired_after)
 
     fig_fairness_before = px.bar(results['fairness_notions'], y='Fairness notions',
+                                 color=results['fairness_notions'].index,
                                  color_discrete_sequence=color_sequence)
 
-    fig_fairness_after = px.bar(results_mitigation['fairness_notions'], y='Fairness notions',
+    fig_fairness_after = px.bar(results_mitigation['fairness_notions'],
+                                color=results_mitigation['fairness_notions'].index, y='Fairness notions',
                                 color_discrete_sequence=color_sequence)
 
     fairness_graph_before = dcc.Graph(id=GRAPH_FAIRNESS_NOTIONS, figure=fig_fairness_before, style={'display': 'block'})
@@ -520,9 +521,6 @@ def step_results_mitigation():
 
 
 def upload_get_app_callbacks(app):
-    # TODO: Elk object mag maar 1 keer als een output voorkomen en het lijkt voor problemen te zorgen bij de div,
-    #  dus ik gebruik de slider als trigger om de layout te updaten
-    #   Elk andere callback onder deze zal dus de slider aanpassen om aan te geven dat de volgende stap getekend moet worden
     @app.callback(
         [Output(UPLOAD_DIV, "children")],
         [Input(STEPS_SLIDER, "value")],
@@ -548,11 +546,8 @@ def upload_get_app_callbacks(app):
     @app.callback(
         [Output(STEPS_SLIDER, "value")],
         [Input(UPLOADED_DATASET, "filename"), Input(UPLOADED_DATASET, "contents")],
-        # TODO: gebruik (ook) contents om de file in te laden, anders krijg je enkel de naam en niet het pad naar je file
     )
     def update_upload(dataset_file_name, dataset_contents):
-        # TODO: om het gemakkelijk te houden, laat ik deze callback de layout aanpassen. Dus wanneer we niet kunnen
-        #  inladen zoals verwacht, moet er niets gebeuren en mogen we ook niet naar de volgende stap
         if dataset_file_name is None:
             raise PreventUpdate
 

@@ -3,7 +3,8 @@ from dash.dependencies import Input, Output
 from Tabs import horizontal_div
 from Process_data import *
 import plotly.express as px
-color_sequence = px.colors.qualitative.Safe
+color_sequence = [px.colors.qualitative.Set3[4], px.colors.qualitative.Set3[3],
+                  px.colors.qualitative.Set2[4], px.colors.qualitative.Set3[11]]
 
 PREVIEW_DD = "Preview_data_DD"
 
@@ -101,19 +102,23 @@ def dd_get_app_callbacks(app):
 
         fig_percentage_hired_model = px.bar(count_df, y='qualified', x='description',
                                             error_y='Standard deviation',
+                                            color='description',
                                             color_discrete_sequence=color_sequence)
 
         fig_percentage_hired_model.update_layout(yaxis_title="Percentage qualified", autosize=False)
 
         fig_percentage_hired_dataset = px.bar(count_df_dataset, y='qualified', x='description',
+                                              color='description',
                                               error_y='Standard deviation',
                                               color_discrete_sequence=color_sequence)
         fig_percentage_hired_dataset.update_layout(yaxis_title="Percentage qualified", autosize=False)
 
         fig_fairness_model = px.bar(results['fairness_notions_model'], y='Mean', error_y='Standard deviation',
+                                    color=results['fairness_notions_dataset'].index,
                                     color_discrete_sequence=color_sequence)
 
         fig_fairness_dataset = px.bar(results['fairness_notions_dataset'], y='Mean', error_y='Standard deviation',
+                                      color=results['fairness_notions_dataset'].index,
                                       color_discrete_sequence=color_sequence)
 
         fig_cm = px.imshow(results['confusion_matrix'],
