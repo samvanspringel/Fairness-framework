@@ -122,22 +122,25 @@ def step_upload():
         multiple=False)
 
     layout_children = [html.H3("Upload your own dataset"),
-                       html.P('Here you can upload your own dataset to do some experimenting. \n'
+                       html.P('Here you can upload your own dataset of candidates for a job to do some experimenting. '
                               ' Machine learning algorithms are prone to bias in their training examples.'
                               ' It can cause them to discriminate due to the model reproducing patterns found in the '
                               'training data. '),
                        html.P(""),
                        html.P('The goal of this application is to visualize the impact of this'
-                              ' potential bias in your dataset. We will train a machine learning algorithm that will '
-                              'apply the patterns that it found in your own dataset.'
+                              ' potential bias in your dataset. We will train a chosen machine learning algorithm that '
+                              'will apply the patterns found in your own dataset.'
                               ' Subsequently, we will test this prediction for fairness. Depending on which sensitive'
-                              ' features you choose, we construct all different groups with all possible for these. '
+                              ' features you choose, we construct all possible different groups for them. '
+                              'A summary of the fairness in the prediction will be shown with explanation. If high '
+                              'results are computed for the fairness notions, it is recommended to mitigate'
+                              ' the bias in your dataset. '
                               'Next, you will be able to choose which mitigation technique to use for your prediction.'
                               ' Again depending on which one you choose, the original dataset or the '
                               'models prediction is changed. '
                               'In the next step you will be shown how well the mitigation '
-                              'worked. Depending on the technique, the fairness notion that is focussed on should be'
-                              ' brought down to zero. '),
+                              'worked. You will be shown a summary of the prediction before and after mitigation. This '
+                              'illustrates the importance of fairness in machine learning. '),
                        html.P('Upload your dataset now to see for yourself! '),
                        upload_button,
                        html.Hr(), ]
@@ -167,9 +170,10 @@ def step_preview_select():
             checklist_sensitive_features,
             html.Br(),
             html.H3("Machine learning model"),
-            html.P('Choose your machine learning model. This model will use 80% of your data to learn from. The other '
-                   '20% will be used to test the performance of the model. You can evaluate the performance in the '
-                   'next step.'),
+            html.P('Choose your machine learning model. This model will use 90% of your data to learn from. The other '
+                   '10% will be used to test the performance of the model. You can evaluate the performance in the '
+                   'next step. If you choose for the "Dataset" option, your own dataset will be used solely to test '
+                   'the fairness. The mitigation process will then be applied only to your dataset.'),
             dropdown_models,
             html.Hr(),
         ], style={'position': 'sticky', "z-index": "999",
@@ -186,7 +190,7 @@ def step_results_model():
     global results, sensitive_features
 
     fig_cm = px.imshow(results['confusion_matrix'][0],
-                       labels=dict(x="Predicted", y="True"), x=classification_labels,
+                       labels=dict(x="Model prediction", y="Your dataset"), x=classification_labels,
                        y=classification_labels,
                        text_auto=True, color_continuous_scale=color_sequence)
 
@@ -207,8 +211,8 @@ def step_results_model():
             html.P(f"When machine learning algorithms learn, they try to optimise their performance on the training "
                    f"set. This means that the test set is unknown territory for the model. When a new instance has "
                    f"no comparable one in the training set, the algorithm may not be able to correctly classify it, "
-                   f"resulting in incorrect  predictions. Assuming we know the true outcome of the testing samples "
-                   f"(your dataset) "
+                   f"resulting in incorrect  predictions. Assuming we know the true or initial outcomes of the "
+                   f"testing samples (your dataset) "
                    f"and every applicant has a positive or a  negative prediction, we can illustrate the mistakes "
                    f"the model made with "
                    f"a confusion matrix. In our job hiring scenario a positive outcome represents that the applicant "
@@ -237,10 +241,15 @@ def step_results_model():
             html.P(style={'text-align': 'center'}, children=f"(TN + TP) / (TN + FP + FN + TP)"),
 
             html.H3(f"Model performance"),
-            html.P('A machine learning model was trained using 80% of your uploaded dataset. '
+            html.P('A machine learning model was trained using 90% of your uploaded dataset. '
                    'Subsequently, its performance was tested using the rest of the data. '
                    'Check below to see the results. On the left you will find a confusion matrix that lets you take '
-                   'a look at the amount of candidates that the model evaluated differently compared to your dataset.'
+                   'a look at the amount of candidates that the model evaluated differently compared to your dataset. '
+                   'Beware of the meaning of this confusion matrix! It does not give information about the bias in '
+                   'the dataset or prediction.'
+                   ' Few or many mistakes do not mean that the model was not influenced by bias. The confusion matrix'
+                   ' denotes how '
+                   'accurately the model could apply the same patterns found in your dataset. '
                    ' On the right there is a bar graph that tells you the accuracy of the model. You would want this '
                    'as close as possible to 100%. This way you can fully see the amount of bias the model is influenced'
                    ' by using your dataset as training ground.'),
@@ -297,11 +306,11 @@ def step_results_fairness():
         html.Div([
             html.H2(f"Fairness"),
             html.P('We tested the machine learning model in terms of fairness. You can view fairness as '
-                   'a way of quantifying how fair the machine learning model treated each candidate.'
+                   'a way of quantifying how fair the machine learning model treated the candidates.'
                    ' Check below to see the results!'),
             html.H3(f"Total vs. Proportionally"),
             html.P('Here you can see a sunburst plot that denotes the total amount of candidates that were deemed '
-                   'qualified based on their sensitive features. This plot can give you a sense of which applicants '
+                   'qualified grouped on their sensitive features. This plot can give you a sense of which applicants '
                    'could be treated unfairly. To get a more objective view the bar graph denotes the same amount, but '
                    'proportional to the amount of candidates present with those specific features. This way the '
                    'numbers cannot be influenced by having more candidates with a certain feature.'),
@@ -310,10 +319,12 @@ def step_results_fairness():
                            space_width=space_width),
             html.Br(),
             html.H3(f"Fairness notions"),
-            html.P('Below you will find certain fairness notions that illustrate the amount of '
+            html.P('Below you will find certain fairness notions that quantify the amount of '
                    'bias the model was influenced by. Each fairness notion focuses on a different aspect of the data. '
+                   'The group fairness notions calculate the difference in certain rates between the groups made '
+                   'on sensitive features. '
                    'If you find that these values are too high, you will find '
-                   'certain methods to try and mitigate this bias. Ultimately, you would want these values as close'
+                   'certain methods to mitigate this bias. Ultimately, you would want these values as close'
                    ' as possible to zero.'),
 
             html.H4(f"Group fairness notions"),
@@ -322,8 +333,9 @@ def step_results_fairness():
                     "predicted qualified should be the same for all groups. This fairness notion only looks at the "
                     "prediction of the model. This way it can detect bias in datasets without having to compare it to "
                     "a prediction. Because it doesn't use a comparison between datasets, it is suitable "
-                    "when the outcomes of the initial dataset are unreliable. Statistical parity is "
-                    "computed by this formula:"),
+                    "when the outcomes of the initial dataset are unreliable. If the outcomes of the "
+                    "candidates were decided by a subjective source, this fairness notion will give you the most "
+                    "clear view of the bias. Statistical parity is computed by this formula:"),
             html.P(style={'text-align': 'center'}, children=f"(TP + FP)/(TP + FP + FN + TN)"),
             html.Br(),
             html.Li("Equal opportunity: This fairness notion is a relaxation of the fairness notion equalized odds. "
@@ -385,17 +397,15 @@ def step_choose_mitigation():
                    'favored or avoided. By adjusting these weights, the dataset can be transformed into being '
                    'completely unbiased.'),
             html.H4(f"Post-processing: Calibrated Equalized Odds"),
-            html.P('This post-processing technique tries to mitigate equalized odds while maintaining the calibrated '
-                   'probabilities of each group. In this framework calibrated equalized odds is used to ensure the '
-                   'difference in predictive equality is brought down to zero. '
-                   'To archieve this, the false positive rates of each group should be equalized while keeping the '
-                   'probabilities of being considered qualified the same. Calibrated equalized odds will change the '
-                   'outcomes of candidates to ensure these conditions.'),
+            html.P('This post-processing technique tries to mitigate the equalized odds of the prediction. '
+                   'In this framework calibrated equalized odds is focussed on equalising the false positive rates '
+                   'of the groups. This should result in a reduction of the difference in predictive equality.  '
+                   'Calibrated equalized odds will change the outcomes of candidates to ensure these conditions.'),
             html.H4(f"Post-processing: Reject Option Classification"),
-            html.P('This mitigation works by changing the outcomes of discriminated groups to positive and the '
-                   'outcomes of favoured groups to negative. In our framework the reject '
-                   'option classifier is used to ensure that the true positive rates of groups are equal. '
-                   'This way it will bring the equal opportunity difference of the groups to zero. '),
+            html.P('This mitigation technique works by changing the outcomes of discriminated groups to positive and '
+                   'the outcomes of favoured groups to negative. In our framework the reject option classifier is '
+                   'focussed on lowering the difference in statistical parity between the privileged and unprivileged '
+                   'groups. '),
             html.H3(f"Mitigate your model"),
             html.H4(f"Choose your mitigation technique"),
             dropdown_mitigating_technique,
@@ -404,7 +414,10 @@ def step_choose_mitigation():
         ], style={'position': 'sticky', "z-index": "999",
                   "width": "100%", 'background': '#FFFFFF', "top": "0%"}),
         ########################
-        html.Br(),
+        html.H3(f"Save datasets"),
+        html.P('You also have the option to save the testing part or your dataset, the original prediction '
+               'and the mitigated prediction below. This way you can individually take a look at the evaluation of '
+               'each candidate and where there are any discrepancies.'),
         save_datasets_check,
         html.Br(),
         html.Button(id=NEXT_BUTTON_MITIGATION_CHOICE, disabled=False, children="Next"),
@@ -474,9 +487,10 @@ def step_results_mitigation():
             html.P('We performed mitigation using your chosen pre- or postprocessing technique '
                    'to eliminate discrimination from the decisions.'
                    ' Check below to compare the results to those of before to see if it worked!'),
-            html.H3(f"Before vs. after"),
+            html.H3(f"Before vs. After"),
             html.P('Here you can see a sunburst plot that denotes the amount of candidates that were deemed qualified '
-                   'based on their sensitive features. This plot can give you a sense whether certain applicants were '
+                   'grouped on their sensitive features. This plot can give you a sense whether certain '
+                   'applicants were '
                    'now treated more fairly. When there are more candidates with a certain feature this can results in'
                    ' a misleading view. When a dataset consists of more candidates with a certain characteristic, it '
                    'is to be expected that more of them will be evaluated qualified. However, this does not mean that'
@@ -494,17 +508,17 @@ def step_results_mitigation():
                            width=[None, width2, graph_width, None, width2, graph_width],
                            space_width=space_width),
             html.P('It may be possible that the results are similar to the original computations. This is because '
-                   'some mitigation techniques make sure that the amount of candidates deemed qualified from each '
-                   'group are still the same. Take a look at the fairness notions below to see the difference.'),
+                   'some mitigation techniques focus on fairness measures that were initially low in your dataset.'
+                   ' Take a look at the fairness notions below to see the difference.'),
 
             html.H3(f"Fairness notions"),
             html.P('Below you will find a comparison of the computations of the fairness notions from before and after'
-                   'mitigation. '
+                   ' mitigation. '
                    'This will illustrate the best whether the mitigation worked.'
-                   ' The fairness notion that your chosen technique focussed on, should have been brought down to'
-                   'zero. You also have the option to save the original prediction and the mitigated prediction below. '
-                   ' This way you can individually take a look at the evaluation of each candidate and where there are '
-                   'any discrepancies.'),
+                   ' The fairness notion that your chosen technique focussed on, should have been reduced. '
+                   'Depending on the results, you may also see that certain fairness notions have been increased. '
+                   'This is due to the difficulty of satisfying multiple fairness notions at once. When decreasing '
+                   'one, you may be increasing a different fairness notion.'),
             horizontal_div([None, None, fairness_graph_before, None, None, fairness_graph_after],
                            width=[None, width2, graph_width, None, width2, graph_width],
                            space_width=space_width),

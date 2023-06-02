@@ -7,6 +7,7 @@ import pandas
 from sklearn.model_selection import cross_val_score, KFold
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn import tree
 
 # AIF360
@@ -15,6 +16,7 @@ from aif360.algorithms.postprocessing import *
 from aif360.datasets import StandardDataset
 from aif360.sklearn.metrics import *
 from aif360.sklearn.postprocessing import *
+from aif360.sklearn.datasets import standardize_dataset
 
 from sklearn.metrics import accuracy_score
 
@@ -85,24 +87,52 @@ def change_types(data):
 
 
 def calculate_fairness(simulator_df, prediction_df, sensitive_attributes, output):
-    spd = abs(aif360.sklearn.metrics.statistical_parity_difference(
-        y_true=simulator_df.set_index(sensitive_attributes)[output],
-        y_pred=prediction_df.set_index(sensitive_attributes)[output].to_numpy(),
-        priv_group=0.0,
-        prot_attr=sensitive_attributes,
-        pos_label=1))
+    if len(sensitive_attributes) > 1:
+        copy_df = simulator_df.copy()
+        copy_df['sensitive'] = np.ones(len(simulator_df))
+        copy_df['sensitive'] = np.where(copy_df[sensitive_attributes].eq(0.0).all(1, skipna=True), 0.0, 1.0)
 
-    pe = abs(false_positive_rate_error(y_true=simulator_df.set_index(sensitive_attributes)[output],
-                                       y_pred=prediction_df.set_index(sensitive_attributes)[
-                                           output].values.ravel(),
-                                       pos_label=1))
+        copy_pred = prediction_df.copy()
+        copy_pred['sensitive'] = np.ones(len(prediction_df))
+        copy_pred['sensitive'] = np.where(copy_pred[sensitive_attributes].eq(0.0).all(1, skipna=True), 0.0, 1.0)
 
-    eo = abs(equal_opportunity_difference(y_true=simulator_df.set_index(sensitive_attributes)[output],
-                                          y_pred=prediction_df.set_index(sensitive_attributes)[
-                                              output].values.ravel(),
-                                          priv_group=0.0,
-                                          prot_attr=sensitive_attributes,
-                                          pos_label=1))
+        spd = abs(aif360.sklearn.metrics.statistical_parity_difference(
+            y_true=copy_df.set_index('sensitive')[output],
+            y_pred=copy_pred.set_index('sensitive')[output].to_numpy(),
+            priv_group=0.0,
+            prot_attr='sensitive',
+            pos_label=1))
+
+        pe = abs(false_positive_rate_error(y_true=copy_df.set_index('sensitive')[output],
+                                           y_pred=copy_pred.set_index('sensitive')[
+                                               output].values.ravel(),
+                                           pos_label=1))
+
+        eo = abs(equal_opportunity_difference(y_true=copy_df.set_index('sensitive')[output],
+                                              y_pred=copy_pred.set_index('sensitive')[
+                                                  output].values.ravel(),
+                                              priv_group=0.0,
+                                              prot_attr='sensitive',
+                                              pos_label=1))
+    else:
+        spd = abs(aif360.sklearn.metrics.statistical_parity_difference(
+            y_true=simulator_df.set_index(sensitive_attributes)[output],
+            y_pred=prediction_df.set_index(sensitive_attributes)[output].to_numpy(),
+            priv_group=0.0,
+            prot_attr=sensitive_attributes,
+            pos_label=1))
+
+        pe = abs(false_positive_rate_error(y_true=simulator_df.set_index(sensitive_attributes)[output],
+                                           y_pred=prediction_df.set_index(sensitive_attributes)[
+                                               output].values.ravel(),
+                                           pos_label=1))
+
+        eo = abs(equal_opportunity_difference(y_true=simulator_df.set_index(sensitive_attributes)[output],
+                                              y_pred=prediction_df.set_index(sensitive_attributes)[
+                                                  output].values.ravel(),
+                                              priv_group=0.0,
+                                              prot_attr=sensitive_attributes,
+                                              pos_label=1))
 
     cs = 1 - abs(consistency_score(isolate_features(prediction_df), isolate_prediction(prediction_df).values.ravel(),
                                    n_neighbors=20).flat[0])
@@ -175,25 +205,60 @@ def calibrated_equalized_odds(full_dataset, df, prediction, sensitive_features, 
 
     prediction_ceo = ceo.predict(dataset=pred).convert_to_dataframe()[0]
 
-    return prediction, prediction_ceo, df
+    return prediction, prediction_ceo
+
+
+def is_unprivileged(row, sensitive_features):
+    for sf in sensitive_features:
+        print(row[sf])
+        if row[sf] == 1.0:
+            return True
+    return False
 
 
 def reject_option_classification(full_dataset, df, prediction, sensitive_features, output, model):
-    roc = RejectOptionClassifier(prot_attr=sensitive_features, threshold=0.5, margin=0.1)
+    if model is None:
+        model = KNeighborsClassifier(n_neighbors=3)
+    if len(sensitive_features) > 1:
+        copy_df = df.copy()
+        copy_df['sensitive'] = np.ones(len(df))
+        copy_full = full_dataset.copy()
+        copy_full['sensitive'] = np.ones(len(full_dataset))
+        copy_df['sensitive'] = np.where(copy_df[sensitive_features].eq(0.0).all(1, skipna=True), 0.0, 1.0)
+        copy_full['sensitive'] = np.where(copy_full[sensitive_features].eq(0.0).all(1, skipna=True), 0.0, 1.0)
 
-    pp = PostProcessingMeta(estimator=model, postprocessor=roc, val_size=0.1)
+        roc = RejectOptionClassifier(prot_attr='sensitive', threshold=0.5, margin=0.1)
 
-    pp.fit(X=isolate_features(full_dataset.set_index(sensitive_features)),
-           y=isolate_prediction(full_dataset).values.ravel(), pos_label=1,
-           priv_group=0.0)
+        pp = PostProcessingMeta(estimator=model, postprocessor=roc, val_size=0.1)
 
-    pred = pp.predict(isolate_features(df.set_index(sensitive_features)))
+        pp.fit(X=isolate_features(copy_full.set_index('sensitive')),
+               y=isolate_prediction(copy_full).values.ravel(), pos_label=1,
+               priv_group=0.0)
 
-    pred_df = isolate_features(df)
+        pred = pp.predict(isolate_features(copy_df.set_index('sensitive')))
 
-    pred_df[output] = pred
+        pred_df = isolate_features(df)
 
-    return prediction, pred_df
+        pred_df[output] = pred
+
+        return prediction, pred_df
+
+    else:
+        roc = RejectOptionClassifier(prot_attr=sensitive_features, threshold=0.5, margin=0.1)
+
+        pp = PostProcessingMeta(estimator=model, postprocessor=roc, val_size=0.1)
+
+        pp.fit(X=isolate_features(full_dataset.set_index(sensitive_features)),
+               y=isolate_prediction(full_dataset).values.ravel(), pos_label=1,
+               priv_group=0.0)
+
+        pred = pp.predict(isolate_features(df.set_index(sensitive_features)))
+
+        pred_df = isolate_features(df)
+
+        pred_df[output] = pred
+
+        return prediction, pred_df
 
 
 def generate_cm(dataset, prediction):

@@ -32,14 +32,17 @@ sensitive_feature_mapping = {
 }
 
 SPLIT_PERCENTAGE = 0.1
-N = 2000
-AMOUNT_OF_SEEDS = 1
+N = 20000
+AMOUNT_OF_SEEDS = 100
 
 
 def combine_row(row, sensitive_features):
     s = ""
     for i in sensitive_features:
-        s += row[i] + ", "
+        if i == sensitive_features[-1]:
+            s += row[i]
+        else:
+            s += row[i] + ", "
     return s
 
 
@@ -157,25 +160,22 @@ def mitigation_pipeline(full_dataset, dataset, prediction, sf, fitted_model, tec
     sensitive_features = list(map(lambda feature: sensitive_feature_mapping[feature], sf))
 
     if fitted_model == 'Dataset':
-        results['original_prediction'] = dataset
-        results['mitigated_prediction'] = dataset
-        results['fairness_notions'] = compute_fairness(dataset, dataset,
-                                                       sensitive_features, 'qualified')
-        results['count_qualified_mitigated'] = hire.count_hired(dataset, sensitive_features)
+        mitigation = mitigation_mapping[technique](full_dataset, dataset, prediction, sensitive_features, 'qualified',
+                                                   None)
 
     else:
         mitigation = mitigation_mapping[technique](full_dataset, dataset, prediction, sensitive_features, 'qualified',
                                                    fitted_model)
 
-        model_prediction = mitigation[0]
-        mitigated_prediction = mitigation[1]
+    model_prediction = mitigation[0]
+    mitigated_prediction = mitigation[1]
 
-        results['original_prediction'] = model_prediction
-        results['mitigated_prediction'] = mitigated_prediction
-        results['fairness_notions'] = compute_fairness(dataset, mitigated_prediction,
-                                                       sensitive_features, 'qualified')
+    results['original_prediction'] = model_prediction
+    results['mitigated_prediction'] = mitigated_prediction
+    results['fairness_notions'] = compute_fairness(dataset, mitigated_prediction,
+                                                   sensitive_features, 'qualified')
 
-        results['count_qualified_mitigated'] = hire.count_hired(mitigated_prediction, sensitive_features)
+    results['count_qualified_mitigated'] = hire.count_hired(mitigated_prediction, sensitive_features)
 
     return results
 
